@@ -15,6 +15,53 @@ function dateAfterYears(dateString, years) {
   return next.toISOString()
 }
 
+function classifyRenewal(record) {
+  if (!record) return { needUpdate: false, level: 'safe', label: '正常', daysLeft: null, reason: '文件状态正常' }
+
+  if (record.status === 'rejected') {
+    return {
+      needUpdate: true,
+      level: 'rejected',
+      label: '需重新提交',
+      daysLeft: null,
+      reason: record.adminOpinion || '审核未通过，需要重新上传或补充材料。',
+    }
+  }
+
+  const validUntil = record.extractedFields?.validUntil
+  if (!validUntil) {
+    return { needUpdate: false, level: 'safe', label: '正常', daysLeft: null, reason: '未识别到有效期' }
+  }
+
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const expiryDate = new Date(validUntil)
+  expiryDate.setHours(0, 0, 0, 0)
+  const daysLeft = Math.ceil((expiryDate - today) / 86400000)
+
+  if (daysLeft < 0) {
+    return {
+      needUpdate: true,
+      level: 'expired',
+      label: '已过期',
+      daysLeft,
+      reason: `证书已过期 ${Math.abs(daysLeft)} 天，请尽快更新。`,
+    }
+  }
+
+  if (daysLeft <= 45) {
+    return {
+      needUpdate: true,
+      level: 'expiring',
+      label: '即将过期',
+      daysLeft,
+      reason: `距离证书到期还有 ${daysLeft} 天，建议提前更新。`,
+    }
+  }
+
+  return { needUpdate: false, level: 'safe', label: '正常', daysLeft, reason: `距离到期还有 ${daysLeft} 天` }
+}
+
 export const useReviewsStore = defineStore('reviews', {
   state: () => ({
     documents: clone(MOCK_DOCUMENTS),
@@ -30,12 +77,32 @@ export const useReviewsStore = defineStore('reviews', {
         .filter((item) => item.status === 'pending')
         .sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt)),
     getRecord: (state) => (recordId) => state.documents.find((item) => item.id === recordId),
+    renewalRecords: (state) =>
+      state.documents
+        .map((item) => ({ ...item, renewalState: classifyRenewal(item) }))
+        .filter((item) => item.renewalState.needUpdate)
+        .sort((a, b) => {
+          const priority = { expired: 0, rejected: 1, expiring: 2 }
+          return (priority[a.renewalState.level] ?? 9) - (priority[b.renewalState.level] ?? 9)
+        }),
+    renewalRecordsBySupplier: (state) => (supplierId) =>
+      state.documents
+        .filter((item) => item.supplierId === supplierId)
+        .map((item) => ({ ...item, renewalState: classifyRenewal(item) }))
+        .filter((item) => item.renewalState.needUpdate)
+        .sort((a, b) => {
+          const priority = { expired: 0, rejected: 1, expiring: 2 }
+          return (priority[a.renewalState.level] ?? 9) - (priority[b.renewalState.level] ?? 9)
+        }),
     supplierArchive: (state) => (supplierId) =>
       state.documents
         .filter((item) => item.supplierId === supplierId)
         .sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt)),
   },
   actions: {
+    getRenewalState(record) {
+      return classifyRenewal(record)
+    },
     createTaskNo() {
       const month = new Date().toISOString().slice(0, 7).replace('-', '')
       return `WK-${month}-${String(this.documents.length + 1).padStart(4, '0')}`
