@@ -244,7 +244,7 @@ function submitReview() {
 .score-form {
   border: 1px solid var(--line-soft);
   border-radius: 18px;
-  background: rgba(255, 248, 238, 0.8);
+  background: rgba(248, 251, 255, 0.82);
   padding: 14px 16px;
 }
 

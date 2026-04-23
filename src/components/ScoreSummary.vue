@@ -64,7 +64,7 @@ const passState = computed(() => props.score.total >= props.threshold)
 .score-pill {
   padding: 10px 14px;
   border-radius: 999px;
-  background: rgba(195, 63, 34, 0.08);
+  background: rgba(197, 63, 79, 0.08);
   color: var(--danger);
   font-weight: 700;
 }

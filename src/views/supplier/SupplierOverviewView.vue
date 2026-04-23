@@ -159,7 +159,7 @@ const currentTemplate = computed(() => standardsStore.findTemplateById(supplier.
 .faq-item + .faq-item {
   margin-top: 16px;
   padding-top: 16px;
-  border-top: 1px dashed rgba(104, 74, 34, 0.16);
+  border-top: 1px dashed rgba(31, 76, 128, 0.16);
 }
 
 .faq-item p {

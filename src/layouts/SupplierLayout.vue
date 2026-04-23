@@ -83,7 +83,7 @@ function logout() {
 .layout-aside {
   padding: 22px 18px;
   border-right: 1px solid var(--line-soft);
-  background: linear-gradient(180deg, rgba(255, 246, 233, 0.86), rgba(248, 237, 219, 0.6));
+  background: linear-gradient(180deg, rgba(246, 250, 255, 0.9), rgba(226, 239, 255, 0.64));
 }
 
 .brand-block {

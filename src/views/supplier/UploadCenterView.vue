@@ -420,12 +420,12 @@ function renewalTagType(level) {
 .upload-panel {
   padding: 18px;
   border-radius: 18px;
-  background: rgba(255, 250, 242, 0.72);
+  background: rgba(248, 251, 255, 0.78);
   border: 1px solid var(--line-soft);
 }
 
 .upload-panel.soft {
-  background: rgba(246, 232, 212, 0.46);
+  background: rgba(222, 237, 255, 0.5);
 }
 
 .panel-title {

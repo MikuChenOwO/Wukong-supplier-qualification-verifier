@@ -365,8 +365,8 @@ async function handleResetPassword() {
   place-items: center;
   padding: 24px;
   background:
-    radial-gradient(circle at 15% 15%, rgba(212, 112, 37, 0.22), transparent 30%),
-    linear-gradient(135deg, #efe1c9 0%, #f8eddc 52%, #ead9bd 100%);
+    radial-gradient(circle at 15% 15%, rgba(76, 151, 232, 0.2), transparent 30%),
+    linear-gradient(135deg, #e4f0ff 0%, #f5f9ff 52%, #d8e9ff 100%);
 }
 
 .auth-panel {
@@ -377,8 +377,8 @@ async function handleResetPassword() {
   gap: 22px;
   border: 1px solid rgba(255, 255, 255, 0.55);
   border-radius: 34px;
-  background: rgba(255, 248, 238, 0.42);
-  box-shadow: 0 26px 70px rgba(86, 47, 9, 0.18);
+  background: rgba(244, 248, 255, 0.44);
+  box-shadow: 0 26px 70px rgba(24, 64, 116, 0.18);
   overflow: hidden;
   backdrop-filter: blur(18px);
 }
@@ -387,7 +387,7 @@ async function handleResetPassword() {
   position: relative;
   min-height: 720px;
   overflow: hidden;
-  background: #2b1c10;
+  background: #0b2447;
 }
 
 .auth-visual img {
@@ -402,8 +402,8 @@ async function handleResetPassword() {
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(90deg, rgba(30, 18, 8, 0.12), rgba(30, 18, 8, 0.48)),
-    linear-gradient(0deg, rgba(34, 21, 10, 0.7), transparent 55%);
+    linear-gradient(90deg, rgba(7, 24, 52, 0.08), rgba(7, 24, 52, 0.46)),
+    linear-gradient(0deg, rgba(7, 24, 52, 0.72), transparent 55%);
 }
 
 .visual-overlay {
@@ -436,8 +436,8 @@ async function handleResetPassword() {
   padding: 28px;
   border: 1px solid rgba(255, 255, 255, 0.64);
   border-radius: 28px;
-  background: linear-gradient(145deg, rgba(255, 250, 244, 0.58), rgba(255, 243, 226, 0.28));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 20px 60px rgba(88, 52, 15, 0.16);
+  background: linear-gradient(145deg, rgba(248, 251, 255, 0.62), rgba(222, 237, 255, 0.32));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 20px 60px rgba(24, 64, 116, 0.16);
   backdrop-filter: blur(24px);
 }
 
@@ -458,7 +458,7 @@ async function handleResetPassword() {
 .auth-form :deep(.el-textarea__inner) {
   border: 1px solid rgba(255, 255, 255, 0.72);
   background: rgba(255, 255, 255, 0.36);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.76), 0 10px 24px rgba(98, 58, 20, 0.08);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.76), 0 10px 24px rgba(24, 64, 116, 0.08);
   backdrop-filter: blur(16px);
 }
 

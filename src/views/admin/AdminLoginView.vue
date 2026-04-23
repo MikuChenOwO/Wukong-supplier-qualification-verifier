@@ -38,22 +38,28 @@ async function handleLogin() {
 
 <template>
   <div class="auth-shell">
-    <div class="auth-panel glass-panel admin">
-      <div class="auth-copy">
-        <span class="hero-kicker">Audit Workbench</span>
-        <h1>管理员审核工作台</h1>
-        <p>
-          这里集中处理供应商待审核文件、人工评分、标准模板管理和审核日志导出。管理员只能审核与填写意见，不能篡改原始资料。
-        </p>
+    <div class="auth-panel">
+      <div class="auth-visual">
+        <img src="/assets/wukong.png" alt="管理员审核工作台" />
+        <div class="visual-overlay">
+          <span>Audit Workbench</span>
+          <h1>管理员审核工作台</h1>
+          <p>集中处理待审核文件、供应商更新监控、人工评分与审核日志。</p>
+        </div>
       </div>
-      <div class="auth-form section-card">
+
+      <div class="auth-form">
+        <div class="form-heading">
+          <h2>审核员登录</h2>
+          <p>管理员仅可审核和填写意见，不能修改供应商原始资料与文件。</p>
+        </div>
         <el-alert type="info" :closable="false" title="测试账号：admin / admin123" style="margin-bottom: 16px" />
         <el-form ref="formRef" :model="form" :rules="rules" label-position="top">
           <el-form-item label="管理员账号" prop="account">
-            <el-input v-model="form.account" />
+            <el-input v-model="form.account" placeholder="请输入管理员账号" />
           </el-form-item>
           <el-form-item label="登录密码" prop="password">
-            <el-input v-model="form.password" type="password" show-password />
+            <el-input v-model="form.password" type="password" show-password placeholder="请输入登录密码" />
           </el-form-item>
           <el-button type="primary" :loading="loading" style="width: 100%" @click="handleLogin">
             登录审核台
@@ -74,34 +80,111 @@ async function handleLogin() {
   display: grid;
   place-items: center;
   padding: 24px;
+  background:
+    radial-gradient(circle at 16% 14%, rgba(76, 151, 232, 0.2), transparent 30%),
+    linear-gradient(135deg, #e4f0ff 0%, #f5f9ff 52%, #d8e9ff 100%);
 }
 
 .auth-panel {
-  width: min(1080px, 100%);
-  padding: 28px;
+  width: min(1120px, 100%);
+  min-height: 620px;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(360px, 440px);
-  gap: 24px;
+  grid-template-columns: minmax(0, 1fr) minmax(380px, 460px);
+  gap: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  border-radius: 34px;
+  background: rgba(244, 248, 255, 0.44);
+  box-shadow: 0 26px 70px rgba(24, 64, 116, 0.18);
+  overflow: hidden;
+  backdrop-filter: blur(18px);
 }
 
-.auth-copy {
-  padding: 18px 8px;
+.auth-visual {
+  position: relative;
+  min-height: 620px;
+  overflow: hidden;
+  background: #0b2447;
 }
 
-.auth-copy h1 {
-  margin: 16px 0 14px;
+.auth-visual img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+
+.auth-visual::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(90deg, rgba(7, 24, 52, 0.08), rgba(7, 24, 52, 0.44)),
+    linear-gradient(0deg, rgba(7, 24, 52, 0.74), transparent 58%);
+}
+
+.visual-overlay {
+  position: absolute;
+  left: 34px;
+  right: 34px;
+  bottom: 34px;
+  z-index: 1;
+  color: white;
+}
+
+.visual-overlay span {
+  display: inline-block;
+  padding: 7px 11px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+  backdrop-filter: blur(10px);
+  letter-spacing: 1px;
+}
+
+.visual-overlay h1 {
+  margin: 18px 0 12px;
   font-family: var(--font-accent);
-  font-size: clamp(30px, 4vw, 44px);
+  font-size: clamp(32px, 4vw, 48px);
+  line-height: 1.16;
+  text-shadow: 0 6px 20px rgba(0, 0, 0, 0.32);
 }
 
-.auth-copy p {
+.visual-overlay p {
+  max-width: 500px;
   margin: 0;
-  line-height: 1.9;
-  color: var(--text-muted);
+  color: rgba(255, 250, 240, 0.88);
+  line-height: 1.8;
 }
 
 .auth-form {
-  padding: 22px;
+  align-self: center;
+  margin: 30px 28px 30px 0;
+  padding: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.64);
+  border-radius: 28px;
+  background: linear-gradient(145deg, rgba(248, 251, 255, 0.62), rgba(222, 237, 255, 0.32));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 20px 60px rgba(24, 64, 116, 0.16);
+  backdrop-filter: blur(24px);
+}
+
+.form-heading h2 {
+  margin: 0 0 8px;
+  font-family: var(--font-accent);
+  font-size: 28px;
+}
+
+.form-heading p {
+  margin: 0 0 18px;
+  color: var(--text-muted);
+  line-height: 1.7;
+}
+
+.auth-form :deep(.el-input__wrapper),
+.auth-form :deep(.el-select__wrapper),
+.auth-form :deep(.el-textarea__inner) {
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  background: rgba(255, 255, 255, 0.36);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.76), 0 10px 24px rgba(24, 64, 116, 0.08);
+  backdrop-filter: blur(16px);
 }
 
 .extra-link {
@@ -113,6 +196,14 @@ async function handleLogin() {
 @media (max-width: 900px) {
   .auth-panel {
     grid-template-columns: 1fr;
+  }
+
+  .auth-visual {
+    min-height: 300px;
+  }
+
+  .auth-form {
+    margin: 0 18px 18px;
   }
 }
 </style>
