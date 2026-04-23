@@ -17,7 +17,8 @@ export const useAuthStore = defineStore('auth', {
     loginSupplier(account, password) {
       const suppliersStore = useSuppliersStore()
       const supplier = suppliersStore.suppliers.find(
-        (item) => item.account === account && item.password === password,
+        (item) =>
+          (item.account === account || item.enterprise.contactPhone === account) && item.password === password,
       )
 
       if (!supplier) {
@@ -56,6 +57,14 @@ export const useAuthStore = defineStore('auth', {
       this.role = ''
       this.userId = ''
       this.displayName = ''
+    },
+    resetSupplierPasswordByPhone(phone, code, newPassword) {
+      if (code !== '888888') {
+        throw new Error('验证码错误，请输入 Mock 验证码 888888。')
+      }
+
+      const suppliersStore = useSuppliersStore()
+      return suppliersStore.resetPasswordByPhone(phone, newPassword)
     },
   },
 })

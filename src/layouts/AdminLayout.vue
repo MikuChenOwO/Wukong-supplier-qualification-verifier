@@ -84,7 +84,7 @@ function logout() {
 .layout-aside {
   padding: 22px 18px;
   border-right: 1px solid var(--line-soft);
-  background: linear-gradient(180deg, rgba(250, 241, 228, 0.92), rgba(242, 224, 203, 0.66));
+  background: linear-gradient(180deg, rgba(246, 250, 255, 0.94), rgba(221, 236, 255, 0.68));
 }
 
 .brand-mark {
@@ -92,7 +92,7 @@ function logout() {
   padding: 6px 10px;
   border-radius: 999px;
   color: white;
-  background: linear-gradient(135deg, #5f3610, #c35b1d);
+  background: linear-gradient(135deg, #0b3f8a, #1f73d8);
 }
 
 .brand-block h2 {

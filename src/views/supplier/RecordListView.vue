@@ -116,7 +116,7 @@ function reupload(row) {
   margin-top: 12px;
   padding: 12px 14px;
   border-radius: 14px;
-  background: rgba(195, 63, 34, 0.08);
+  background: rgba(197, 63, 79, 0.08);
   color: var(--danger);
 }
 </style>

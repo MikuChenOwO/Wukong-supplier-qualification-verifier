@@ -30,7 +30,7 @@ defineProps({
   width: 110px;
   height: 110px;
   border-radius: 50%;
-  background: rgba(195, 91, 29, 0.08);
+  background: rgba(31, 115, 216, 0.08);
 }
 
 .label {
@@ -54,7 +54,7 @@ defineProps({
 }
 
 .tone-danger::after {
-  background: rgba(195, 63, 34, 0.1);
+  background: rgba(197, 63, 79, 0.1);
 }
 
 .tone-success::after {

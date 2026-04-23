@@ -6,7 +6,9 @@ import { useAuthStore } from '../../stores/auth'
 import { useReviewsStore } from '../../stores/reviews'
 import { useStandardsStore } from '../../stores/standards'
 import { useSuppliersStore } from '../../stores/suppliers'
-import { formatDateTime } from '../../utils/format'
+import MachineBadge from '../../components/MachineBadge.vue'
+import StatusTag from '../../components/StatusTag.vue'
+import { formatDate, formatDateTime } from '../../utils/format'
 
 const route = useRoute()
 const router = useRouter()
@@ -15,19 +17,27 @@ const reviewsStore = useReviewsStore()
 const standardsStore = useStandardsStore()
 const suppliersStore = useSuppliersStore()
 
+const activeTab = ref(route.query.reupload ? 'upload' : 'renewal')
 const uploading = ref(false)
+const updating = ref(false)
+const updateDialogVisible = ref(false)
 const uploadRef = ref(null)
+const updateUploadRef = ref(null)
 const fileList = ref([])
+const updateFileList = ref([])
+const selectedUpdateRecord = ref(null)
 
 const supplier = computed(() => suppliersStore.currentSupplier(authStore.userId))
 const currentTemplate = computed(() => standardsStore.findTemplateById(supplier.value?.enterprise.templateId))
-const recentRecords = computed(() => reviewsStore.recordsBySupplier(authStore.userId).slice(0, 5))
+const allRecords = computed(() => reviewsStore.recordsBySupplier(authStore.userId))
+const renewalRecords = computed(() => reviewsStore.renewalRecordsBySupplier(authStore.userId))
+const recentRecords = computed(() => allRecords.value.slice(0, 5))
 
 const form = reactive({
   category: route.query.category || 'business-license',
 })
 
-function beforeUpload(rawFile) {
+function validateRawFile(rawFile) {
   const allowTypes = ['application/pdf', 'image/png', 'image/jpeg']
   if (!allowTypes.includes(rawFile.type)) {
     ElMessage.error('仅支持 PDF、PNG、JPG 文件。')
@@ -40,8 +50,16 @@ function beforeUpload(rawFile) {
   return true
 }
 
+function beforeUpload(rawFile) {
+  return validateRawFile(rawFile)
+}
+
 function handleChange(_, files) {
-  fileList.value = files
+  fileList.value = files.filter((file) => !file.raw || validateRawFile(file.raw))
+}
+
+function handleUpdateChange(_, files) {
+  updateFileList.value = files.filter((file) => !file.raw || validateRawFile(file.raw))
 }
 
 function buildPreviewUrl(file) {
@@ -55,9 +73,27 @@ function handleRemove(_, files) {
   fileList.value = files
 }
 
+function handleUpdateRemove(_, files) {
+  updateFileList.value = files
+}
+
 function resetSelection() {
   fileList.value = []
   uploadRef.value?.clearFiles()
+}
+
+function resetUpdateSelection() {
+  updateFileList.value = []
+  updateUploadRef.value?.clearFiles()
+}
+
+function normalizeFiles(files) {
+  return files.map((file) => ({
+    name: file.name,
+    type: file.raw?.type || file.raw?.mime || '',
+    size: file.size,
+    previewUrl: buildPreviewUrl(file),
+  }))
 }
 
 function submitUpload() {
@@ -68,12 +104,7 @@ function submitUpload() {
         supplierId: authStore.userId,
         category: form.category,
         reuploadOf: String(route.query.reupload || ''),
-        files: fileList.value.map((file) => ({
-          name: file.name,
-          type: file.raw?.type || file.raw?.mime || '',
-          size: file.size,
-          previewUrl: buildPreviewUrl(file),
-        })),
+        files: normalizeFiles(fileList.value),
       })
       ElMessage.success(`已完成 ${records.length} 份文件上传，并进入机器预审核。`)
       resetSelection()
@@ -85,113 +116,316 @@ function submitUpload() {
     }
   }, 800)
 }
+
+function openUpdateWindow(record) {
+  selectedUpdateRecord.value = record
+  updateDialogVisible.value = true
+  resetUpdateSelection()
+}
+
+function submitUpdate() {
+  if (!selectedUpdateRecord.value) return
+  updating.value = true
+
+  setTimeout(() => {
+    try {
+      const records = reviewsStore.uploadDocuments({
+        supplierId: authStore.userId,
+        category: selectedUpdateRecord.value.category,
+        reuploadOf: selectedUpdateRecord.value.id,
+        files: normalizeFiles(updateFileList.value),
+      })
+      ElMessage.success(`已提交 ${records.length} 份更新文件，状态已重置为审核中。`)
+      updateDialogVisible.value = false
+      resetUpdateSelection()
+    } catch (error) {
+      ElMessage.error(error.message)
+    } finally {
+      updating.value = false
+    }
+  }, 800)
+}
+
+function renewalTagType(level) {
+  if (level === 'expired' || level === 'rejected') return 'danger'
+  if (level === 'expiring') return 'warning'
+  return 'success'
+}
 </script>
 
 <template>
   <div class="content-grid">
     <div class="page-title">
       <div>
-        <h1>资质上传中心</h1>
-        <p>支持 PDF / PNG / JPG 文件，上传完成后自动执行字段识别、风险标记和预审评分，并推送到管理员待审核队列。</p>
+        <h1>文件管理</h1>
+        <p>在这里统一上传资质文件、查看已提交文件、处理即将过期/已过期/未通过的更新任务。</p>
+      </div>
+      <el-button type="primary" @click="activeTab = 'upload'">上传资质文件</el-button>
+    </div>
+
+    <div class="stat-grid">
+      <div class="section-card file-stat">
+        <span>全部文件</span>
+        <strong>{{ allRecords.length }}</strong>
+        <p>当前企业所有资质与历史审核记录</p>
+      </div>
+      <div class="section-card file-stat danger">
+        <span>需更新文件</span>
+        <strong>{{ renewalRecords.length }}</strong>
+        <p>包含已过期、即将过期和审核未通过文件</p>
+      </div>
+      <div class="section-card file-stat">
+        <span>准入模板</span>
+        <strong>{{ currentTemplate?.version }}</strong>
+        <p>{{ currentTemplate?.name }}</p>
       </div>
     </div>
 
-    <div class="content-grid two-col">
-      <div class="section-card upload-card">
-        <div class="panel-title">
-          <h3>发起上传</h3>
-          <el-tag type="warning">单文件 ≤ 20MB</el-tag>
-        </div>
-        <el-alert
-          v-if="route.query.reupload"
-          type="warning"
-          :closable="false"
-          title="当前为未通过文件的重新上传，提交后状态会重置为“审核中”。"
-          style="margin-bottom: 16px"
-        />
-        <el-form label-position="top">
-          <el-form-item label="文件类型">
-            <el-select v-model="form.category">
-              <el-option
-                v-for="item in standardsStore.documentTypes"
-                :key="item.value"
-                :label="item.label"
-                :value="item.value"
-              />
-            </el-select>
-          </el-form-item>
-          <el-form-item label="当前准入模板">
-            <el-input :model-value="currentTemplate?.name" disabled />
-          </el-form-item>
-          <el-upload
-            ref="uploadRef"
-            drag
-            multiple
-            :auto-upload="false"
-            :file-list="fileList"
-            :before-upload="beforeUpload"
-            :on-change="handleChange"
-            :on-remove="handleRemove"
-          >
-            <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
-            <div class="el-upload__text">将文件拖到此处，或 <em>点击选择文件</em></div>
-            <template #tip>
-              <div class="status-text">
-                同一供应商不可重复上传同类型文件；未通过文件需要通过“重新上传”入口重提。
+    <div class="section-card manager-card">
+      <el-tabs v-model="activeTab">
+        <el-tab-pane label="需更新文件" name="renewal">
+          <el-alert
+            type="warning"
+            :closable="false"
+            title="临期、过期、未通过文件会同步到管理员端，建议供应商优先处理。"
+            style="margin-bottom: 16px"
+          />
+          <el-table :data="renewalRecords" class="app-table" stripe>
+            <el-table-column prop="fileName" label="文件名" min-width="220" />
+            <el-table-column label="文件类型" min-width="160">
+              <template #default="{ row }">
+                {{ standardsStore.documentTypes.find((item) => item.value === row.category)?.label }}
+              </template>
+            </el-table-column>
+            <el-table-column label="有效期" min-width="120">
+              <template #default="{ row }">{{ formatDate(row.extractedFields.validUntil) }}</template>
+            </el-table-column>
+            <el-table-column label="更新状态" min-width="130">
+              <template #default="{ row }">
+                <el-tag :type="renewalTagType(row.renewalState.level)">
+                  {{ row.renewalState.label }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="renewalState.reason" label="原因" min-width="260" />
+            <el-table-column label="操作" min-width="180" fixed="right">
+              <template #default="{ row }">
+                <div class="toolbar">
+                  <el-button text type="primary" @click="$router.push(`/supplier/records/${row.id}`)">详情</el-button>
+                  <el-button text type="danger" @click="openUpdateWindow(row)">更新文件</el-button>
+                </div>
+              </template>
+            </el-table-column>
+          </el-table>
+          <div v-if="!renewalRecords.length" class="rich-empty">当前没有需要更新的文件。</div>
+        </el-tab-pane>
+
+        <el-tab-pane label="新增上传" name="upload">
+          <div class="content-grid two-col">
+            <div class="upload-panel">
+              <div class="panel-title">
+                <h3>上传资质文件</h3>
+                <el-tag type="warning">单文件 ≤ 20MB</el-tag>
               </div>
-            </template>
-          </el-upload>
-        </el-form>
-        <div class="toolbar" style="margin-top: 18px">
-          <el-button type="primary" :loading="uploading" @click="submitUpload">上传并触发预审核</el-button>
-          <el-button plain @click="resetSelection">清空所选</el-button>
-        </div>
-      </div>
+              <el-alert
+                v-if="route.query.reupload"
+                type="warning"
+                :closable="false"
+                title="当前为未通过文件的重新上传，提交后状态会重置为“审核中”。"
+                style="margin-bottom: 16px"
+              />
+              <el-form label-position="top">
+                <el-form-item label="文件类型">
+                  <el-select v-model="form.category">
+                    <el-option
+                      v-for="item in standardsStore.documentTypes"
+                      :key="item.value"
+                      :label="item.label"
+                      :value="item.value"
+                    />
+                  </el-select>
+                </el-form-item>
+                <el-form-item label="当前准入模板">
+                  <el-input :model-value="currentTemplate?.name" disabled />
+                </el-form-item>
+                <el-upload
+                  ref="uploadRef"
+                  drag
+                  multiple
+                  :auto-upload="false"
+                  :file-list="fileList"
+                  :before-upload="beforeUpload"
+                  :on-change="handleChange"
+                  :on-remove="handleRemove"
+                >
+                  <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
+                  <div class="el-upload__text">将文件拖到此处，或 <em>点击选择文件</em></div>
+                  <template #tip>
+                    <div class="status-text">
+                      支持 PDF、PNG、JPG。同类型生效文件禁止重复上传，如需替换请在“需更新文件”中处理。
+                    </div>
+                  </template>
+                </el-upload>
+              </el-form>
+              <div class="toolbar" style="margin-top: 18px">
+                <el-button type="primary" :loading="uploading" @click="submitUpload">上传并触发预审核</el-button>
+                <el-button plain @click="resetSelection">清空所选</el-button>
+              </div>
+            </div>
 
-      <div class="content-grid">
-        <div class="section-card upload-card">
-          <div class="panel-title">
-            <h3>模板规则提示</h3>
-          </div>
-          <div class="metric-row">
-            <span>模板名称</span>
-            <strong>{{ currentTemplate?.name }}</strong>
-          </div>
-          <div class="metric-row">
-            <span>准入门槛</span>
-            <strong>{{ currentTemplate?.threshold }} 分</strong>
-          </div>
-          <div class="metric-row">
-            <span>一票否决</span>
-            <strong>{{ currentTemplate?.vetoRules?.join('；') || '无' }}</strong>
-          </div>
-          <div class="metric-row">
-            <span>加分项</span>
-            <strong>绿色供应商认证，最高 {{ currentTemplate?.weights.bonusMax }} 分</strong>
-          </div>
-        </div>
-
-        <div class="section-card upload-card">
-          <div class="panel-title">
-            <h3>最近上传</h3>
-            <el-button text @click="$router.push('/supplier/records')">全部记录</el-button>
-          </div>
-          <div v-if="recentRecords.length">
-            <div v-for="record in recentRecords" :key="record.id" class="metric-row">
-              <span>{{ record.fileName }}</span>
-              <strong>{{ formatDateTime(record.uploadedAt) }}</strong>
+            <div class="upload-panel soft">
+              <div class="panel-title">
+                <h3>模板规则提示</h3>
+              </div>
+              <div class="metric-row">
+                <span>模板名称</span>
+                <strong>{{ currentTemplate?.name }}</strong>
+              </div>
+              <div class="metric-row">
+                <span>准入门槛</span>
+                <strong>{{ currentTemplate?.threshold }} 分</strong>
+              </div>
+              <div class="metric-row">
+                <span>一票否决</span>
+                <strong>{{ currentTemplate?.vetoRules?.join('；') || '无' }}</strong>
+              </div>
+              <div class="metric-row">
+                <span>最近上传</span>
+                <strong>{{ recentRecords[0]?.fileName || '暂无' }}</strong>
+              </div>
             </div>
           </div>
-          <div v-else class="rich-empty">还没有上传记录，先提交第一份资质文件吧。</div>
-        </div>
-      </div>
+        </el-tab-pane>
+
+        <el-tab-pane label="全部文件" name="files">
+          <el-table :data="allRecords" class="app-table" stripe>
+            <el-table-column prop="fileName" label="文件名" min-width="220" />
+            <el-table-column label="文件类型" min-width="160">
+              <template #default="{ row }">
+                {{ standardsStore.documentTypes.find((item) => item.value === row.category)?.label }}
+              </template>
+            </el-table-column>
+            <el-table-column label="上传时间" min-width="160">
+              <template #default="{ row }">{{ formatDateTime(row.uploadedAt) }}</template>
+            </el-table-column>
+            <el-table-column label="有效期" min-width="120">
+              <template #default="{ row }">{{ formatDate(row.extractedFields.validUntil) }}</template>
+            </el-table-column>
+            <el-table-column label="机器核验" min-width="150">
+              <template #default="{ row }">
+                <MachineBadge :status="row.machineStatus" :score="row.precheckScore" />
+              </template>
+            </el-table-column>
+            <el-table-column label="审核状态" min-width="110">
+              <template #default="{ row }">
+                <StatusTag :status="row.status" />
+              </template>
+            </el-table-column>
+            <el-table-column label="更新提醒" min-width="130">
+              <template #default="{ row }">
+                <el-tag :type="renewalTagType(reviewsStore.getRenewalState(row).level)">
+                  {{ reviewsStore.getRenewalState(row).label }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" min-width="200" fixed="right">
+              <template #default="{ row }">
+                <div class="toolbar">
+                  <el-button text type="primary" @click="$router.push(`/supplier/records/${row.id}`)">详情</el-button>
+                  <el-button
+                    v-if="reviewsStore.getRenewalState(row).needUpdate"
+                    text
+                    type="danger"
+                    @click="openUpdateWindow(row)"
+                  >
+                    更新文件
+                  </el-button>
+                </div>
+              </template>
+            </el-table-column>
+          </el-table>
+        </el-tab-pane>
+      </el-tabs>
     </div>
+
+    <el-dialog v-model="updateDialogVisible" title="更新资质文件" width="620px">
+      <el-alert
+        type="warning"
+        :closable="false"
+        :title="selectedUpdateRecord?.renewalState?.reason || '请选择新文件后提交更新。'"
+        style="margin-bottom: 16px"
+      />
+      <div class="metric-row">
+        <span>原文件</span>
+        <strong>{{ selectedUpdateRecord?.fileName }}</strong>
+      </div>
+      <div class="metric-row">
+        <span>文件类型</span>
+        <strong>{{ standardsStore.documentTypes.find((item) => item.value === selectedUpdateRecord?.category)?.label }}</strong>
+      </div>
+      <div class="soft-divider" />
+      <el-upload
+        ref="updateUploadRef"
+        drag
+        :auto-upload="false"
+        :limit="1"
+        :file-list="updateFileList"
+        :before-upload="beforeUpload"
+        :on-change="handleUpdateChange"
+        :on-remove="handleUpdateRemove"
+      >
+        <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
+        <div class="el-upload__text">选择新的资质文件，提交后进入审核中</div>
+      </el-upload>
+      <template #footer>
+        <div class="toolbar" style="justify-content: flex-end">
+          <el-button @click="updateDialogVisible = false">取消</el-button>
+          <el-button type="primary" :loading="updating" @click="submitUpdate">提交更新</el-button>
+        </div>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <style scoped>
-.upload-card {
+.manager-card,
+.file-stat {
   padding: 20px;
+}
+
+.file-stat {
+  min-height: 128px;
+}
+
+.file-stat span {
+  color: var(--text-muted);
+}
+
+.file-stat strong {
+  display: block;
+  margin: 12px 0 8px;
+  font-size: 30px;
+}
+
+.file-stat p {
+  margin: 0;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+
+.file-stat.danger strong {
+  color: var(--danger);
+}
+
+.upload-panel {
+  padding: 18px;
+  border-radius: 18px;
+  background: rgba(248, 251, 255, 0.78);
+  border: 1px solid var(--line-soft);
+}
+
+.upload-panel.soft {
+  background: rgba(222, 237, 255, 0.5);
 }
 
 .panel-title {

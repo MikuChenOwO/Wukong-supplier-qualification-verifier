@@ -43,9 +43,18 @@ const tableData = computed(() =>
     .sort((a, b) => new Date(b.uploadedAt) - new Date(a.uploadedAt)),
 )
 
+const renewalTableData = computed(() =>
+  reviewsStore.renewalRecords.map((item) => ({
+    ...item,
+    supplierName: suppliersStore.currentSupplier(item.supplierId)?.enterprise.enterpriseName,
+    creditCode: suppliersStore.currentSupplier(item.supplierId)?.enterprise.creditCode,
+  })),
+)
+
 const approvedCount = computed(() => reviewsStore.documents.filter((item) => item.status === 'approved').length)
 const pendingCount = computed(() => reviewsStore.documents.filter((item) => item.status === 'pending').length)
 const rejectedCount = computed(() => reviewsStore.documents.filter((item) => item.status === 'rejected').length)
+const renewalCount = computed(() => renewalTableData.value.length)
 
 function openDetail(row) {
   router.push(`/admin/reviews/${row.id}`)
@@ -65,6 +74,42 @@ function openDetail(row) {
       <StatCard label="待审核" :value="pendingCount" hint="需要管理员处理的文件数量" />
       <StatCard label="已通过" :value="approvedCount" hint="已锁定归档的审核结果" tone="success" />
       <StatCard label="未通过" :value="rejectedCount" hint="等待供应商重新上传" tone="danger" />
+      <StatCard label="需更新文件" :value="renewalCount" hint="临期、过期、未通过文件同步监控" tone="danger" />
+    </div>
+
+    <div class="section-card table-card">
+      <div class="panel-title">
+        <div>
+          <h3>供应商文件更新监控</h3>
+          <p>同步展示供应商侧需要更新的资质文件，便于管理员催办和风险跟踪。</p>
+        </div>
+      </div>
+      <el-table :data="renewalTableData" class="app-table" stripe>
+        <el-table-column prop="supplierName" label="供应商名称" min-width="220" />
+        <el-table-column prop="creditCode" label="统一社会信用代码" min-width="180" />
+        <el-table-column prop="fileName" label="文件名" min-width="220" />
+        <el-table-column label="文件类型" min-width="160">
+          <template #default="{ row }">
+            {{ standardsStore.documentTypes.find((item) => item.value === row.category)?.label }}
+          </template>
+        </el-table-column>
+        <el-table-column label="有效期" min-width="120">
+          <template #default="{ row }">{{ row.extractedFields.validUntil }}</template>
+        </el-table-column>
+        <el-table-column label="更新状态" min-width="130">
+          <template #default="{ row }">
+            <el-tag :type="row.renewalState.level === 'expired' || row.renewalState.level === 'rejected' ? 'danger' : 'warning'">
+              {{ row.renewalState.label }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="renewalState.reason" label="原因" min-width="260" />
+        <el-table-column label="操作" min-width="120" fixed="right">
+          <template #default="{ row }">
+            <el-button text type="primary" @click="openDetail(row)">查看详情</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
     </div>
 
     <div class="section-card table-card">
@@ -130,5 +175,18 @@ function openDetail(row) {
 <style scoped>
 .table-card {
   padding: 20px;
+}
+
+.panel-title {
+  margin-bottom: 16px;
+}
+
+.panel-title h3 {
+  margin: 0 0 6px;
+}
+
+.panel-title p {
+  margin: 0;
+  color: var(--text-muted);
 }
 </style>

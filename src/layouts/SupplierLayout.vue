@@ -14,7 +14,7 @@ const supplier = computed(() => suppliersStore.currentSupplier(authStore.userId)
 const menus = [
   { index: '/supplier/overview', label: '总览', icon: 'DataAnalysis' },
   { index: '/supplier/company', label: '企业信息', icon: 'OfficeBuilding' },
-  { index: '/supplier/upload', label: '资质上传', icon: 'UploadFilled' },
+  { index: '/supplier/upload', label: '文件管理', icon: 'UploadFilled' },
   { index: '/supplier/records', label: '核验记录', icon: 'DocumentChecked' },
   { index: '/supplier/help', label: '帮助中心', icon: 'Reading' },
 ]
@@ -36,7 +36,7 @@ function logout() {
         <div class="brand-block">
           <span class="brand-mark">悟空</span>
           <h2>供应商自助端</h2>
-          <p>上传资质、预审核验、跟踪审核闭环</p>
+          <p>管理资质文件、更新临期证书、跟踪审核闭环</p>
         </div>
         <el-menu
           :default-active="route.path"
@@ -63,7 +63,6 @@ function logout() {
           </div>
           <div class="toolbar">
             <el-tag type="warning">Mock 纯前端</el-tag>
-            <el-button plain @click="router.push('/supplier/upload')">发起核验</el-button>
             <el-button type="primary" @click="logout">退出登录</el-button>
           </div>
         </el-header>
@@ -84,7 +83,7 @@ function logout() {
 .layout-aside {
   padding: 22px 18px;
   border-right: 1px solid var(--line-soft);
-  background: linear-gradient(180deg, rgba(255, 246, 233, 0.86), rgba(248, 237, 219, 0.6));
+  background: linear-gradient(180deg, rgba(246, 250, 255, 0.9), rgba(226, 239, 255, 0.64));
 }
 
 .brand-block {

@@ -107,5 +107,13 @@ export const useSuppliersStore = defineStore('suppliers', {
     existsAccount(account) {
       return this.suppliers.some((item) => item.account === account)
     },
+    resetPasswordByPhone(phone, newPassword) {
+      const supplier = this.suppliers.find((item) => item.enterprise.contactPhone === phone || item.account === phone)
+      if (!supplier) {
+        throw new Error('未找到该手机号对应的供应商账号。')
+      }
+      supplier.password = newPassword
+      return supplier
+    },
   },
 })

@@ -91,7 +91,7 @@ async function fullScreen() {
   place-items: center;
   padding: 18px;
   border-radius: 18px;
-  background: linear-gradient(135deg, rgba(246, 229, 205, 0.65), rgba(255, 248, 239, 0.95));
+  background: linear-gradient(135deg, rgba(222, 237, 255, 0.72), rgba(248, 251, 255, 0.95));
   overflow: auto;
 }
 
@@ -102,7 +102,7 @@ async function fullScreen() {
   border: none;
   border-radius: 14px;
   background: white;
-  box-shadow: 0 10px 28px rgba(68, 45, 14, 0.12);
+  box-shadow: 0 10px 28px rgba(24, 64, 116, 0.12);
 }
 
 .image-frame {
