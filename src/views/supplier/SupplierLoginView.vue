@@ -218,17 +218,17 @@ async function handleResetPassword() {
   <div class="auth-shell">
     <div class="auth-panel">
       <div class="auth-visual">
-        <img src="/assets/wukong.png" alt="悟空供应商资质核验" />
+        <img src="/assets/wukong_verticle.png" alt="悟空供应商登录视觉" />
         <div class="visual-overlay">
           <span class="hero-kicker">WUKONG</span>
-          <h1>供应商资质自动核验助手</h1>
-          <p>上传、预审、复核、归档，一条链路完成供应商资质闭环。</p>
+          <h1>企业资质自助服务</h1>
+          <p>维护企业资料、管理资质文件、跟踪审核进度。</p>
         </div>
       </div>
 
       <div class="auth-form">
         <div class="form-heading">
-          <h2>供应商入口</h2>
+          <h2>供应商登录</h2>
           <p>账号安全已加入验证码校验，注册与找回密码均使用手机号确认身份。</p>
         </div>
         <el-tabs v-model="activeTab">
@@ -251,7 +251,7 @@ async function handleResetPassword() {
                 <el-link type="primary" @click="resetDialogVisible = true">忘记密码？</el-link>
               </div>
               <el-button type="primary" :loading="loginLoading" style="width: 100%" @click="handleLogin">
-                登录进入
+                登录
               </el-button>
             </el-form>
           </el-tab-pane>
@@ -370,10 +370,10 @@ async function handleResetPassword() {
 }
 
 .auth-panel {
-  width: min(1220px, 100%);
-  min-height: 720px;
+  width: min(1180px, 100%);
+  min-height: 680px;
   display: grid;
-  grid-template-columns: minmax(0, 1.05fr) minmax(420px, 540px);
+  grid-template-columns: minmax(0, 1fr) minmax(420px, 520px);
   gap: 22px;
   border: 1px solid rgba(255, 255, 255, 0.55);
   border-radius: 34px;
@@ -385,7 +385,7 @@ async function handleResetPassword() {
 
 .auth-visual {
   position: relative;
-  min-height: 720px;
+  min-height: 680px;
   overflow: hidden;
   background: #0b2447;
 }
@@ -410,7 +410,7 @@ async function handleResetPassword() {
   position: absolute;
   left: 34px;
   right: 34px;
-  bottom: 34px;
+  bottom: 88px;
   z-index: 1;
   color: white;
 }
