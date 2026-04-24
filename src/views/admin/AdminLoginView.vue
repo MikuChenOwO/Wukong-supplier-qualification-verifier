@@ -40,17 +40,17 @@ async function handleLogin() {
   <div class="auth-shell">
     <div class="auth-panel">
       <div class="auth-visual">
-        <img src="/assets/wukong.png" alt="管理员审核工作台" />
+        <img src="/assets/wukong_verticle.png" alt="悟空管理员登录视觉" />
         <div class="visual-overlay">
-          <span>Audit Workbench</span>
-          <h1>管理员审核工作台</h1>
-          <p>集中处理待审核文件、供应商更新监控、人工评分与审核日志。</p>
+          <span>WUKONG</span>
+          <h1>资质审核管理服务</h1>
+          <p>处理审核待办、监控文件更新、维护审核标准。</p>
         </div>
       </div>
 
       <div class="auth-form">
         <div class="form-heading">
-          <h2>审核员登录</h2>
+          <h2>管理员登录</h2>
           <p>管理员仅可审核和填写意见，不能修改供应商原始资料与文件。</p>
         </div>
         <el-alert type="info" :closable="false" title="测试账号：admin / admin123" style="margin-bottom: 16px" />
@@ -62,7 +62,7 @@ async function handleLogin() {
             <el-input v-model="form.password" type="password" show-password placeholder="请输入登录密码" />
           </el-form-item>
           <el-button type="primary" :loading="loading" style="width: 100%" @click="handleLogin">
-            登录审核台
+            登录
           </el-button>
         </el-form>
         <div class="extra-link">
@@ -86,10 +86,10 @@ async function handleLogin() {
 }
 
 .auth-panel {
-  width: min(1120px, 100%);
-  min-height: 620px;
+  width: min(1180px, 100%);
+  min-height: 680px;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(380px, 460px);
+  grid-template-columns: minmax(0, 1fr) minmax(420px, 520px);
   gap: 22px;
   border: 1px solid rgba(255, 255, 255, 0.55);
   border-radius: 34px;
@@ -101,7 +101,7 @@ async function handleLogin() {
 
 .auth-visual {
   position: relative;
-  min-height: 620px;
+  min-height: 680px;
   overflow: hidden;
   background: #0b2447;
 }
@@ -126,7 +126,7 @@ async function handleLogin() {
   position: absolute;
   left: 34px;
   right: 34px;
-  bottom: 34px;
+  bottom: 88px;
   z-index: 1;
   color: white;
 }
@@ -199,7 +199,7 @@ async function handleLogin() {
   }
 
   .auth-visual {
-    min-height: 300px;
+    min-height: 320px;
   }
 
   .auth-form {
