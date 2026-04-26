@@ -7,6 +7,7 @@ import { useReviewsStore } from '../../stores/reviews'
 import { useStandardsStore } from '../../stores/standards'
 import { useSuppliersStore } from '../../stores/suppliers'
 import MachineBadge from '../../components/MachineBadge.vue'
+import RiskStatusTag from '../../components/RiskStatusTag.vue'
 import StatusTag from '../../components/StatusTag.vue'
 import { formatDate, formatDateTime } from '../../utils/format'
 
@@ -147,7 +148,7 @@ function submitUpdate() {
 }
 
 function renewalTagType(level) {
-  if (level === 'expired' || level === 'rejected') return 'danger'
+  if (level === 'expired' || level === 'rejected' || level === 'urgent-expiring') return 'danger'
   if (level === 'expiring') return 'warning'
   return 'success'
 }
@@ -158,7 +159,7 @@ function renewalTagType(level) {
     <div class="page-title">
       <div>
         <h1>文件管理</h1>
-        <p>在这里统一上传资质文件、查看已提交文件、处理即将过期/已过期/未通过的更新任务。</p>
+        <p>统一上传资质文件、查看更细化的告警状态，并跟进临期、过期、退回补传等风险文件。</p>
       </div>
       <el-button type="primary" @click="activeTab = 'upload'">上传资质文件</el-button>
     </div>
@@ -167,12 +168,12 @@ function renewalTagType(level) {
       <div class="section-card file-stat">
         <span>全部文件</span>
         <strong>{{ allRecords.length }}</strong>
-        <p>当前企业所有资质与历史审核记录</p>
+        <p>当前企业所有资质与审核记录</p>
       </div>
       <div class="section-card file-stat danger">
-        <span>需更新文件</span>
+        <span>需优先处理</span>
         <strong>{{ renewalRecords.length }}</strong>
-        <p>包含已过期、即将过期和审核未通过文件</p>
+        <p>包含临期加急、已过期、退回补传和待核实文件</p>
       </div>
       <div class="section-card file-stat">
         <span>准入模板</span>
@@ -187,11 +188,11 @@ function renewalTagType(level) {
           <el-alert
             type="warning"
             :closable="false"
-            title="临期、过期、未通过文件会同步到管理员端，建议供应商优先处理。"
+            title="高风险、临期和退回补传文件会自动触发短信提醒，管理员端也会同步看到相应风险。"
             style="margin-bottom: 16px"
           />
           <el-table :data="renewalRecords" class="app-table" stripe>
-            <el-table-column prop="fileName" label="文件名" min-width="220" />
+            <el-table-column prop="fileName" label="文件名称" min-width="220" />
             <el-table-column label="文件类型" min-width="160">
               <template #default="{ row }">
                 {{ standardsStore.documentTypes.find((item) => item.value === row.category)?.label }}
@@ -206,6 +207,14 @@ function renewalTagType(level) {
                   {{ row.renewalState.label }}
                 </el-tag>
               </template>
+            </el-table-column>
+            <el-table-column label="风险状态" min-width="140">
+              <template #default="{ row }">
+                <RiskStatusTag :status="row.riskStatus" />
+              </template>
+            </el-table-column>
+            <el-table-column label="告警类别" min-width="240">
+              <template #default="{ row }">{{ row.riskAlerts.map((item) => item.label).join('、') }}</template>
             </el-table-column>
             <el-table-column prop="renewalState.reason" label="原因" min-width="260" />
             <el-table-column label="操作" min-width="180" fixed="right">
@@ -275,11 +284,11 @@ function renewalTagType(level) {
 
             <div class="upload-panel soft">
               <div class="panel-title">
-                <h3>模板规则提示</h3>
+                <h3>状态说明</h3>
               </div>
               <div class="metric-row">
-                <span>模板名称</span>
-                <strong>{{ currentTemplate?.name }}</strong>
+                <span>模拟状态</span>
+                <strong>正常归档 / 跟进观察 / 重点关注 / 高风险待处理 / 紧急处理</strong>
               </div>
               <div class="metric-row">
                 <span>准入门槛</span>
@@ -299,7 +308,7 @@ function renewalTagType(level) {
 
         <el-tab-pane label="全部文件" name="files">
           <el-table :data="allRecords" class="app-table" stripe>
-            <el-table-column prop="fileName" label="文件名" min-width="220" />
+            <el-table-column prop="fileName" label="文件名称" min-width="220" />
             <el-table-column label="文件类型" min-width="160">
               <template #default="{ row }">
                 {{ standardsStore.documentTypes.find((item) => item.value === row.category)?.label }}
@@ -321,11 +330,14 @@ function renewalTagType(level) {
                 <StatusTag :status="row.status" />
               </template>
             </el-table-column>
-            <el-table-column label="更新提醒" min-width="130">
+            <el-table-column label="风险状态" min-width="140">
               <template #default="{ row }">
-                <el-tag :type="renewalTagType(reviewsStore.getRenewalState(row).level)">
-                  {{ reviewsStore.getRenewalState(row).label }}
-                </el-tag>
+                <RiskStatusTag :status="row.riskStatus" />
+              </template>
+            </el-table-column>
+            <el-table-column label="短信状态" min-width="130">
+              <template #default="{ row }">
+                <el-tag :type="row.notificationState.type">{{ row.notificationState.label }}</el-tag>
               </template>
             </el-table-column>
             <el-table-column label="操作" min-width="200" fixed="right">
@@ -360,8 +372,8 @@ function renewalTagType(level) {
         <strong>{{ selectedUpdateRecord?.fileName }}</strong>
       </div>
       <div class="metric-row">
-        <span>文件类型</span>
-        <strong>{{ standardsStore.documentTypes.find((item) => item.value === selectedUpdateRecord?.category)?.label }}</strong>
+        <span>风险状态</span>
+        <RiskStatusTag :status="selectedUpdateRecord?.riskStatus || { label: '--', type: 'info' }" />
       </div>
       <div class="soft-divider" />
       <el-upload
@@ -375,7 +387,7 @@ function renewalTagType(level) {
         :on-remove="handleUpdateRemove"
       >
         <el-icon class="el-icon--upload"><UploadFilled /></el-icon>
-        <div class="el-upload__text">选择新的资质文件，提交后进入审核中</div>
+        <div class="el-upload__text">选择新的资质文件，提交后重新进入审核流程</div>
       </el-upload>
       <template #footer>
         <div class="toolbar" style="justify-content: flex-end">
@@ -419,13 +431,12 @@ function renewalTagType(level) {
 
 .upload-panel {
   padding: 18px;
-  border-radius: 18px;
-  background: rgba(248, 251, 255, 0.78);
-  border: 1px solid var(--line-soft);
 }
 
 .upload-panel.soft {
-  background: rgba(222, 237, 255, 0.5);
+  border: 1px solid var(--line-soft);
+  border-radius: 18px;
+  background: rgba(248, 251, 255, 0.82);
 }
 
 .panel-title {
@@ -433,7 +444,7 @@ function renewalTagType(level) {
   justify-content: space-between;
   gap: 12px;
   align-items: center;
-  margin-bottom: 14px;
+  margin-bottom: 16px;
 }
 
 .panel-title h3 {

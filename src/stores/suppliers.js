@@ -45,6 +45,28 @@ export const useSuppliersStore = defineStore('suppliers', {
       this.suppliers.unshift(supplier)
       return supplier
     },
+    createSupplierByAdmin(form) {
+      const account = String(form.account || '').trim() || `supplier${String(this.suppliers.length + 1).padStart(2, '0')}`
+      const password = String(form.password || '').trim() || '123456'
+
+      if (this.existsAccount(account)) {
+        throw new Error('该登录账号已存在，请更换后再保存。')
+      }
+
+      if (this.suppliers.some((item) => item.enterprise.creditCode === form.creditCode)) {
+        throw new Error('该统一社会信用代码已存在，请勿重复创建供应商。')
+      }
+
+      if (this.suppliers.some((item) => item.enterprise.contactPhone === form.contactPhone)) {
+        throw new Error('该联系人手机号已被其他供应商使用。')
+      }
+
+      return this.registerSupplier({
+        ...form,
+        account,
+        password,
+      })
+    },
     updateEnterprise(supplierId, payload) {
       const supplier = this.currentSupplier(supplierId)
       if (!supplier) return { matched: false }

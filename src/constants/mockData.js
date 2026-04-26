@@ -223,6 +223,45 @@ export const MOCK_REVIEW_LOGS = [
   },
 ]
 
+export const MOCK_NOTIFICATION_LOGS = [
+  {
+    id: 'msg-001',
+    recordId: 'doc-002',
+    supplierId: 'sup-001',
+    supplierName: '悟空精工（深圳）有限公司',
+    fileName: '质量体系证书-2026版.pdf',
+    phone: '13800138000',
+    channel: 'sms',
+    mode: 'auto',
+    trigger: 'upload-auto',
+    operatorName: '系统',
+    riskLabel: '重点关注',
+    alertLabels: ['证书临期', '认证范围待核实'],
+    message:
+      '【悟空资质助手】贵司文件《质量体系证书-2026版.pdf》存在重点关注告警：证书临期、认证范围待核实。请尽快登录系统查看并处理。',
+    status: 'sent',
+    sentAt: '2026-04-15T09:45:00',
+  },
+  {
+    id: 'msg-002',
+    recordId: 'doc-004',
+    supplierId: 'sup-002',
+    supplierName: '筋斗云供应链科技（上海）有限公司',
+    fileName: '行业强制认证-已过期.pdf',
+    phone: '13922334455',
+    channel: 'sms',
+    mode: 'auto',
+    trigger: 'upload-auto',
+    operatorName: '系统',
+    riskLabel: '紧急处理',
+    alertLabels: ['证书已过期'],
+    message:
+      '【悟空资质助手】贵司文件《行业强制认证-已过期.pdf》存在紧急处理告警：证书已过期。请立即补传最新有效文件。',
+    status: 'sent',
+    sentAt: '2026-04-20T10:28:00',
+  },
+]
+
 export const MOCK_DOCUMENTS = [
   {
     id: 'doc-001',

@@ -95,6 +95,11 @@ a {
 .content-grid {
   display: grid;
   gap: 18px;
+  min-width: 0;
+}
+
+.content-grid > * {
+  min-width: 0;
 }
 
 .two-col {
@@ -171,6 +176,10 @@ a {
 .app-table .el-table__header th {
   background: rgba(216, 233, 255, 0.62) !important;
   color: var(--text-main);
+}
+
+.app-table {
+  width: 100%;
 }
 
 .app-table .el-table {

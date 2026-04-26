@@ -86,7 +86,7 @@ async function fullScreen() {
 }
 
 .preview-stage {
-  min-height: 480px;
+  min-height: 420px;
   display: grid;
   place-items: center;
   padding: 18px;
@@ -97,8 +97,9 @@ async function fullScreen() {
 
 .pdf-frame,
 .image-frame {
-  width: min(100%, 880px);
-  height: 520px;
+  width: 100%;
+  max-width: 760px;
+  height: 460px;
   border: none;
   border-radius: 14px;
   background: white;
