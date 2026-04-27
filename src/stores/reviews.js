@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { MOCK_DOCUMENTS, MOCK_NOTIFICATION_LOGS, MOCK_REVIEW_LOGS } from '../constants/mockData'
+import { MOCK_APPEALS, MOCK_DOCUMENTS, MOCK_NOTIFICATION_LOGS, MOCK_REVIEW_LOGS } from '../constants/mockData'
 import { createInlineImage, SAMPLE_PDF_DATA_URI } from '../utils/preview'
 import { useStandardsStore } from './standards'
 import { useSuppliersStore } from './suppliers'
@@ -19,6 +19,24 @@ function createId(prefix) {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
 }
 
+function normalizeTextList(value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item || '').trim()).filter(Boolean)
+  }
+  return String(value || '')
+    .split('\n')
+    .map((item) => item.trim())
+    .filter(Boolean)
+}
+
+function buildAppealDeadline(reviewedAt, days = 5) {
+  if (!reviewedAt) return ''
+  const deadline = new Date(reviewedAt)
+  deadline.setDate(deadline.getDate() + days)
+  deadline.setHours(23, 59, 59, 0)
+  return deadline.toISOString()
+}
+
 function severityRank(severity) {
   return {
     low: 1,
@@ -34,6 +52,36 @@ function sortByUploadedAt(a, b) {
 
 function sortBySentAt(a, b) {
   return new Date(b.sentAt) - new Date(a.sentAt)
+}
+
+function sortByUpdatedAt(a, b) {
+  return new Date(b.updatedAt || b.submittedAt) - new Date(a.updatedAt || a.submittedAt)
+}
+
+function isAppealActive(appeal) {
+  return ['submitted', 'under_review', 'supplement_required'].includes(appeal?.status)
+}
+
+function enrichAppeal(appeal, record) {
+  return {
+    ...appeal,
+    recordStatus: record?.status || '',
+    recordCategory: record?.category || '',
+    appealableUntil: record?.appealDeadline || '',
+    assigneeName: appeal?.assigneeName || '',
+    assignedAt: appeal?.assignedAt || '',
+  }
+}
+
+function appealStatusLabel(status) {
+  return {
+    submitted: '申诉已提交',
+    under_review: '申诉复核中',
+    supplement_required: '待补充材料',
+    accepted: '申诉成立',
+    rejected: '申诉驳回',
+    closed: '申诉已结案',
+  }[status] || '申诉更新'
 }
 
 function classifyRenewal(record) {
@@ -289,6 +337,7 @@ export const useReviewsStore = defineStore('reviews', {
     documents: clone(MOCK_DOCUMENTS),
     reviewLogs: clone(MOCK_REVIEW_LOGS),
     notificationLogs: clone(MOCK_NOTIFICATION_LOGS),
+    appeals: clone(MOCK_APPEALS),
   }),
   getters: {
     enrichedDocuments: (state) =>
@@ -342,10 +391,48 @@ export const useReviewsStore = defineStore('reviews', {
       state.notificationLogs.filter((item) => item.supplierId === supplierId).slice().sort(sortBySentAt),
     latestNotificationByRecord: (state) => (recordId) =>
       state.notificationLogs.filter((item) => item.recordId === recordId).slice().sort(sortBySentAt)[0],
+    allAppeals: (state) =>
+      state.appeals
+        .map((item) => enrichAppeal(item, state.documents.find((record) => record.id === item.recordId)))
+        .sort(sortByUpdatedAt),
+    activeAppealCount: (state) =>
+      state.appeals.filter((item) => ['submitted', 'under_review', 'supplement_required'].includes(item.status)).length,
+    appealsBySupplier: (state) => (supplierId) =>
+      state.appeals
+        .filter((item) => item.supplierId === supplierId)
+        .map((item) => enrichAppeal(item, state.documents.find((record) => record.id === item.recordId)))
+        .sort(sortByUpdatedAt),
+    getAppeal: (state) => (appealId) => {
+      const appeal = state.appeals.find((item) => item.id === appealId)
+      if (!appeal) return undefined
+      return enrichAppeal(appeal, state.documents.find((record) => record.id === appeal.recordId))
+    },
+    latestAppealByRecord: (state) => (recordId) => {
+      const appeal = state.appeals.filter((item) => item.recordId === recordId).slice().sort(sortByUpdatedAt)[0]
+      if (!appeal) return undefined
+      return enrichAppeal(appeal, state.documents.find((record) => record.id === recordId))
+    },
   },
   actions: {
     getRenewalState(record) {
       return classifyRenewal(record)
+    },
+    canSubmitAppeal(recordId) {
+      const record = this.getRecord(recordId)
+      if (!record?.appealable) {
+        return { ok: false, message: '当前记录不可申诉。' }
+      }
+
+      if (record.appealDeadline && new Date(record.appealDeadline) < new Date()) {
+        return { ok: false, message: '当前记录已超过申诉截止时间。' }
+      }
+
+      const latestAppeal = this.latestAppealByRecord(recordId)
+      if (latestAppeal && isAppealActive(latestAppeal)) {
+        return { ok: false, message: '当前记录已有进行中的申诉，请先查看处理状态。', appeal: latestAppeal }
+      }
+
+      return { ok: true }
     },
     getRiskProfile(record) {
       const renewalState = classifyRenewal(record)
@@ -359,6 +446,317 @@ export const useReviewsStore = defineStore('reviews', {
     createTaskNo() {
       const month = new Date().toISOString().slice(0, 7).replace('-', '')
       return `WK-${month}-${String(this.documents.length + 1).padStart(4, '0')}`
+    },
+    createAppealNotificationMessage(appeal, record, status, feedback = '') {
+      const statusText = appealStatusLabel(status)
+      const suffix = feedback ? `处理意见：${feedback}` : '请进入申诉记录页查看最新进展。'
+      return `【悟空资质助手】贵司文件《${record.fileName}》的申诉状态已更新为“${statusText}”。${suffix}`
+    },
+    sendAppealNotification({ appealId, operatorName = '系统', status, feedback = '', trigger = 'appeal-update' }) {
+      const appeal = this.appeals.find((item) => item.id === appealId)
+      if (!appeal) {
+        throw new Error('未找到对应申诉记录。')
+      }
+
+      const record = this.documents.find((item) => item.id === appeal.recordId)
+      if (!record) {
+        throw new Error('未找到申诉关联文件。')
+      }
+
+      const suppliersStore = useSuppliersStore()
+      const supplier = suppliersStore.currentSupplier(appeal.supplierId)
+      if (!supplier?.enterprise?.contactPhone) {
+        throw new Error('当前供应商未维护手机号，无法发送申诉进展提醒。')
+      }
+
+      const log = {
+        id: createId('msg'),
+        recordId: record.id,
+        supplierId: supplier.id,
+        supplierName: supplier.enterprise.enterpriseName,
+        fileName: record.fileName,
+        phone: supplier.enterprise.contactPhone,
+        channel: 'sms',
+        mode: 'auto',
+        trigger,
+        operatorName,
+        riskLabel: '申诉进展',
+        alertLabels: [appealStatusLabel(status)],
+        message: this.createAppealNotificationMessage(appeal, record, status, feedback),
+        status: 'sent',
+        sentAt: new Date().toISOString(),
+      }
+
+      this.notificationLogs.unshift(log)
+      return log
+    },
+    submitAppeal({
+      recordId,
+      supplierId,
+      reasonType,
+      title,
+      summary,
+      description,
+      requestedOutcome,
+      contactPhone,
+      evidenceNotes = '',
+      files = [],
+    }) {
+      const eligibility = this.canSubmitAppeal(recordId)
+      if (!eligibility.ok) {
+        throw new Error(eligibility.message)
+      }
+
+      const record = this.getRecord(recordId)
+      const suppliersStore = useSuppliersStore()
+      const supplier = suppliersStore.currentSupplier(supplierId)
+      if (!record || !supplier || record.supplierId !== supplierId) {
+        throw new Error('未找到对应的申诉记录或供应商信息。')
+      }
+
+      const normalizedTitle = String(title || '').trim()
+      const normalizedSummary = String(summary || '').trim()
+      const normalizedDescription = String(description || '').trim()
+      const normalizedOutcome = String(requestedOutcome || '').trim()
+
+      if (!normalizedTitle || !normalizedSummary || !normalizedDescription || !normalizedOutcome) {
+        throw new Error('请完整填写申诉标题、摘要、详细说明和期望结果。')
+      }
+
+      if (!files.length) {
+        throw new Error('请至少上传一份申诉材料后再提交。')
+      }
+
+      const now = new Date().toISOString()
+      const appeal = {
+        id: createId('apl'),
+        recordId,
+        supplierId,
+        supplierName: supplier.enterprise.enterpriseName,
+        fileName: record.fileName,
+        status: 'submitted',
+        reasonType,
+        title: normalizedTitle,
+        summary: normalizedSummary,
+        description: normalizedDescription,
+        requestedOutcome: normalizedOutcome,
+        contactPhone: String(contactPhone || supplier.enterprise.contactPhone || '').trim(),
+        evidenceNotes: String(evidenceNotes || '').trim(),
+        assigneeName: '',
+        assignedAt: '',
+        attachments: files.map((file, index) => ({
+          id: `${createId('apl-file')}-${index}`,
+          name: file.name,
+          type: file.type || 'application/octet-stream',
+          sizeMB: Number(((file.size || 0) / 1024 / 1024).toFixed(2)),
+        })),
+        submittedAt: now,
+        updatedAt: now,
+        latestFeedback: '申诉已提交，等待管理员受理。',
+        timeline: [
+          {
+            id: createId('apl-log'),
+            at: now,
+            actor: '供应商',
+            action: '提交申诉',
+            note: normalizedSummary,
+          },
+        ],
+      }
+
+      this.appeals.unshift(appeal)
+      this.reviewLogs.unshift({
+        id: createId('log'),
+        recordId: record.id,
+        taskNo: record.taskNo,
+        supplierName: supplier.enterprise.enterpriseName,
+        fileName: record.fileName,
+        reviewer: supplier.enterprise.contactName || supplier.enterprise.enterpriseName,
+        action: '提交申诉',
+        result: appealStatusLabel('submitted'),
+        score: record.scoreBreakdown?.total || record.precheckScore || 0,
+        comment: normalizedSummary,
+        reviewedAt: now,
+      })
+      return this.getAppeal(appeal.id)
+    },
+    assignAppeals({ appealIds, assigneeName, operatorName = '管理员', startReview = false }) {
+      const normalizedAssignee = String(assigneeName || '').trim()
+      if (!normalizedAssignee) {
+        throw new Error('请先选择或填写复核人。')
+      }
+
+      if (!appealIds?.length) {
+        throw new Error('请至少选择一条申诉后再进行指派。')
+      }
+
+      const now = new Date().toISOString()
+
+      appealIds.forEach((appealId) => {
+        const appeal = this.appeals.find((item) => item.id === appealId)
+        if (!appeal) return
+
+        appeal.assigneeName = normalizedAssignee
+        appeal.assignedAt = now
+        appeal.updatedAt = now
+        appeal.latestFeedback = `已指派给 ${normalizedAssignee} 进行复核。`
+        appeal.timeline.push({
+          id: createId('apl-log'),
+          at: now,
+          actor: operatorName,
+          action: '指派复核人',
+          note: `已指派给 ${normalizedAssignee}${startReview ? '，并同步进入复核中。' : '。'}`,
+        })
+
+        const record = this.documents.find((item) => item.id === appeal.recordId)
+        this.reviewLogs.unshift({
+          id: createId('log'),
+          recordId: appeal.recordId,
+          taskNo: record?.taskNo || '--',
+          supplierName: appeal.supplierName,
+          fileName: appeal.fileName,
+          reviewer: operatorName,
+          action: '申诉处理-指派复核人',
+          result: `已指派 ${normalizedAssignee}`,
+          score: record?.scoreBreakdown?.total || record?.precheckScore || 0,
+          comment: `已指派给 ${normalizedAssignee}${startReview ? '，并同步进入复核中。' : '。'}`,
+          reviewedAt: now,
+        })
+
+        if (startReview && appeal.status === 'submitted') {
+          appeal.status = 'under_review'
+          appeal.timeline.push({
+            id: createId('apl-log'),
+            at: now,
+            actor: normalizedAssignee,
+            action: '开始复核',
+            note: '管理员批量指派后自动进入复核中。',
+          })
+        }
+      })
+
+      return appealIds.map((id) => this.getAppeal(id)).filter(Boolean)
+    },
+    batchProcessAppeals({ appealIds, operatorName, nextStatus, feedback }) {
+      if (!appealIds?.length) {
+        throw new Error('请至少选择一条申诉后再执行批量处理。')
+      }
+
+      if (nextStatus === 'accepted') {
+        throw new Error('“申诉成立”涉及逐条调整审核结论，请在详情区单独处理。')
+      }
+
+      return appealIds.map((appealId) =>
+        this.processAppeal({
+          appealId,
+          operatorName,
+          nextStatus,
+          feedback,
+        }),
+      )
+    },
+    processAppeal({
+      appealId,
+      operatorName,
+      nextStatus,
+      feedback,
+      resultingRecordStatus = '',
+      resultingOpinion = '',
+      resultingClauses = [],
+      resultingSuggestions = [],
+    }) {
+      const appeal = this.appeals.find((item) => item.id === appealId)
+      if (!appeal) {
+        throw new Error('未找到对应申诉记录。')
+      }
+
+      const record = this.documents.find((item) => item.id === appeal.recordId)
+      if (!record) {
+        throw new Error('未找到申诉关联的审核记录。')
+      }
+
+      const normalizedFeedback = String(feedback || '').trim()
+      if (!normalizedFeedback) {
+        throw new Error('请填写本次申诉处理意见。')
+      }
+
+      if (nextStatus === 'accepted' && !resultingRecordStatus) {
+        throw new Error('申诉成立时请选择调整后的审核结论。')
+      }
+
+      const now = new Date().toISOString()
+      const actionLabel =
+        {
+          submitted: '重新提交申诉',
+          under_review: '开始复核',
+          supplement_required: '要求补充材料',
+          accepted: '申诉成立',
+          rejected: '申诉驳回',
+          closed: '申诉结案',
+        }[nextStatus] || '处理申诉'
+
+      appeal.status = nextStatus
+      appeal.latestFeedback = normalizedFeedback
+      appeal.updatedAt = now
+      appeal.timeline.push({
+        id: createId('apl-log'),
+        at: now,
+        actor: operatorName || '管理员',
+        action: actionLabel,
+        note: normalizedFeedback,
+      })
+
+      let processResultLabel = appealStatusLabel(nextStatus)
+
+      if (nextStatus === 'accepted') {
+        record.status = resultingRecordStatus
+        record.reviewedAt = now
+        record.reviewerName = operatorName
+        record.adminOpinion = String(resultingOpinion || normalizedFeedback || '').trim()
+        record.unmetClauses =
+          resultingRecordStatus === 'approved' ? [] : normalizeTextList(resultingClauses || record.unmetClauses)
+        record.improvementSuggestions =
+          resultingRecordStatus === 'approved'
+            ? []
+            : normalizeTextList(resultingSuggestions || record.improvementSuggestions)
+        record.appealable = false
+        record.appealDeadline = ''
+        processResultLabel =
+          resultingRecordStatus === 'approved'
+            ? '申诉成立-调整通过'
+            : resultingRecordStatus === 'conditional'
+              ? '申诉成立-调整为有条件通过'
+              : '申诉成立-维持未通过'
+      }
+
+      if (nextStatus === 'rejected' || nextStatus === 'closed') {
+        record.appealable = false
+        record.appealDeadline = ''
+      }
+
+      this.reviewLogs.unshift({
+        id: createId('log'),
+        recordId: record.id,
+        taskNo: record.taskNo,
+        supplierName: appeal.supplierName,
+        fileName: record.fileName,
+        reviewer: operatorName,
+        action: `申诉处理-${actionLabel}`,
+        result: processResultLabel,
+        score: record.scoreBreakdown?.total || record.precheckScore || 0,
+        comment: normalizedFeedback,
+        reviewedAt: now,
+      })
+
+      this.sendAppealNotification({
+        appealId: appeal.id,
+        operatorName: operatorName || '系统',
+        status: nextStatus,
+        feedback: normalizedFeedback,
+        trigger: 'appeal-auto',
+      })
+
+      return this.getAppeal(appeal.id)
     },
     resolveSameSourceMatches(supplier) {
       const suppliersStore = useSuppliersStore()
@@ -508,7 +906,7 @@ export const useReviewsStore = defineStore('reviews', {
       return !this.documents.some((item) => {
         if (item.supplierId !== supplierId || item.category !== category) return false
         if (reuploadOf && item.id === reuploadOf) return false
-        return item.status === 'pending' || item.status === 'approved'
+        return item.status === 'pending' || item.status === 'approved' || item.status === 'conditional'
       })
     },
     createNotificationMessage(record, supplier, trigger) {
@@ -608,6 +1006,10 @@ export const useReviewsStore = defineStore('reviews', {
           scoreBreakdown: result.scoreBreakdown,
           sameSourceMatches: result.sameSourceMatches,
           adminOpinion: '',
+          unmetClauses: [],
+          improvementSuggestions: [],
+          appealable: false,
+          appealDeadline: '',
           reviewerName: '',
           reviewedAt: '',
           reuploadOf,
@@ -631,7 +1033,17 @@ export const useReviewsStore = defineStore('reviews', {
         return this.getRecord(record.id)
       })
     },
-    reviewDocument({ recordId, reviewerName, status, opinion, scoreBreakdown }) {
+    reviewDocument({
+      recordId,
+      reviewerName,
+      status,
+      opinion,
+      scoreBreakdown,
+      unmetClauses = [],
+      improvementSuggestions = [],
+      appealable = false,
+      appealDeadline = '',
+    }) {
       const record = this.documents.find((item) => item.id === recordId)
       if (!record) {
         throw new Error('未找到待审核记录。')
@@ -641,8 +1053,15 @@ export const useReviewsStore = defineStore('reviews', {
         throw new Error('已通过文件已锁定，不可再次审核。')
       }
 
-      if (status === 'rejected' && !String(opinion || '').trim()) {
-        throw new Error('未通过时必须填写未通过原因。')
+      if ((status === 'rejected' || status === 'conditional') && !String(opinion || '').trim()) {
+        throw new Error(status === 'conditional' ? '有条件通过时必须填写审核意见。' : '未通过时必须填写未通过原因。')
+      }
+
+      const normalizedClauses = normalizeTextList(unmetClauses)
+      const normalizedSuggestions = normalizeTextList(improvementSuggestions)
+
+      if ((status === 'rejected' || status === 'conditional') && !normalizedClauses.length) {
+        throw new Error('请至少填写一条未满足条款。')
       }
 
       const suppliersStore = useSuppliersStore()
@@ -660,6 +1079,16 @@ export const useReviewsStore = defineStore('reviews', {
       record.reviewedAt = new Date().toISOString()
       record.adminOpinion = opinion
       record.scoreBreakdown = { ...scoreBreakdown }
+      record.unmetClauses = status === 'conditional' || status === 'rejected' ? normalizedClauses : []
+      record.improvementSuggestions =
+        status === 'conditional' || status === 'rejected' ? normalizedSuggestions : []
+      record.appealable = status === 'approved' || status === 'pending' ? false : Boolean(appealable)
+      record.appealDeadline =
+        status === 'approved' || status === 'pending'
+          ? ''
+          : record.appealable
+            ? appealDeadline || buildAppealDeadline(record.reviewedAt)
+            : ''
 
       this.reviewLogs.unshift({
         id: createId('log'),
@@ -668,14 +1097,28 @@ export const useReviewsStore = defineStore('reviews', {
         supplierName: supplier.enterprise.enterpriseName,
         fileName: record.fileName,
         reviewer: reviewerName,
-        action: status === 'approved' ? '审核通过' : status === 'rejected' ? '审核未通过' : '保持审核中',
-        result: status === 'approved' ? '已通过' : status === 'rejected' ? '未通过' : '审核中',
+        action:
+          status === 'approved'
+            ? '审核通过'
+            : status === 'conditional'
+              ? '审核有条件通过'
+              : status === 'rejected'
+                ? '审核未通过'
+                : '保持审核中',
+        result:
+          status === 'approved'
+            ? '已通过'
+            : status === 'conditional'
+              ? '有条件通过'
+              : status === 'rejected'
+                ? '未通过'
+                : '审核中',
         score: scoreBreakdown.total,
         comment: opinion,
         reviewedAt: record.reviewedAt,
       })
 
-      if (status === 'rejected') {
+      if (status === 'rejected' || status === 'conditional') {
         this.sendRiskNotification({
           recordId: record.id,
           operatorName: '系统',

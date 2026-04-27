@@ -6,6 +6,7 @@ import { useReviewsStore } from '../../stores/reviews'
 import { useStandardsStore } from '../../stores/standards'
 import { useSuppliersStore } from '../../stores/suppliers'
 import RiskStatusTag from '../../components/RiskStatusTag.vue'
+import StatusTag from '../../components/StatusTag.vue'
 import { formatDateTime, formatPhone, normalizeKeyword } from '../../utils/format'
 
 const authStore = useAuthStore()
@@ -17,13 +18,80 @@ const keywordInput = ref('')
 const keyword = ref('')
 const drawerVisible = ref(false)
 const createDialogVisible = ref(false)
+const importDialogVisible = ref(false)
 const currentSupplierId = ref('')
 const tab = ref('profile')
 const adminUploading = ref(false)
 const creatingSupplier = ref(false)
+const importingSuppliers = ref(false)
 const uploadRef = ref(null)
 const uploadFileList = ref([])
 const createFormRef = ref(null)
+const showcaseOpen = ref([])
+const selectedImportIds = ref([])
+
+const importCandidates = [
+  {
+    id: 'legacy-001',
+    enterpriseName: '华星钣金制造（天津）有限公司',
+    creditCode: '91120116MA06Q7D95K',
+    legalPerson: '陈拓',
+    contactName: '吕青',
+    contactPhone: '13377889911',
+    registerAddress: '天津市滨海新区智造港 6 号',
+    productionAddress: '天津市滨海新区装备园 3 号厂房',
+    foundedAt: '2017-11-08',
+    registeredCapital: '2600 万人民币',
+    businessScope: '精密钣金件、焊接件、模组结构件制造与交付',
+    supplierType: 'parts',
+    productLevel: 'B',
+    templateId: 'std-parts-b-v2',
+    lifecycleStatus: 'active',
+    latestReviewTrigger: '历史档案导入完成，等待年度复评',
+    tags: ['存量导入', '历史合格供应商'],
+    note: '历史审核记录完整，可直接建立电子档案。',
+  },
+  {
+    id: 'legacy-002',
+    enterpriseName: '北斗智运仓配（武汉）有限公司',
+    creditCode: '91420100MA4KX5T62P',
+    legalPerson: '韩策',
+    contactName: '顾航',
+    contactPhone: '13255668899',
+    registerAddress: '武汉市东湖高新区光谷大道 58 号',
+    productionAddress: '武汉市江夏区周转仓 8 号',
+    foundedAt: '2018-06-19',
+    registeredCapital: '1400 万人民币',
+    businessScope: '周转配送、仓配协同、物流包装器具维护',
+    supplierType: 'transport',
+    productLevel: 'C',
+    templateId: 'std-transport-c-v1',
+    lifecycleStatus: 'watch',
+    latestReviewTrigger: '临期证书已纳入季度复审',
+    tags: ['存量导入', '证书临期'],
+    note: '存在证书临期记录，导入后纳入重点观察。',
+  },
+  {
+    id: 'legacy-003',
+    enterpriseName: '星链工业服务（成都）有限公司',
+    creditCode: '91510100MA67W3P41N',
+    legalPerson: '梁非',
+    contactName: '穆然',
+    contactPhone: '13144556677',
+    registerAddress: '成都市高新区天府三街 199 号',
+    productionAddress: '成都市双流区园区运维中心 2 层',
+    foundedAt: '2020-03-12',
+    registeredCapital: '1100 万人民币',
+    businessScope: '驻场运维、综合服务、环保配套支持',
+    supplierType: 'other',
+    productLevel: 'C',
+    templateId: 'std-other-c-v1',
+    lifecycleStatus: 'frozen',
+    latestReviewTrigger: '证书过期，待更新后重审',
+    tags: ['存量导入', '冻结观察'],
+    note: '历史档案显示证书过期，导入后保持冻结状态。',
+  },
+]
 
 const uploadForm = reactive({
   category: 'business-license',
@@ -93,12 +161,88 @@ const currentSupplier = computed(() => suppliersStore.currentSupplier(currentSup
 const currentRecords = computed(() => reviewsStore.recordsBySupplier(currentSupplierId.value))
 const currentRiskRecords = computed(() => reviewsStore.riskRecordsBySupplier(currentSupplierId.value))
 const currentNotifications = computed(() => reviewsStore.notificationsBySupplier(currentSupplierId.value))
+const currentLifecycle = computed(() => currentSupplier.value?.lifecycle || {})
 const currentAdminUploads = computed(() =>
   currentRecords.value.filter((item) => item.uploadSource === 'admin').slice(0, 8),
 )
+const currentApprovedRecords = computed(() => currentRecords.value.filter((item) => item.status === 'approved').slice(0, 6))
 const replaceableRecords = computed(() =>
   currentRecords.value.filter((item) => item.category === uploadForm.category).slice(0, 12),
 )
+const templateShowcases = computed(() =>
+  standardsStore.activeTemplates.slice(0, 6).map((item) => ({
+    ...item,
+    supplierTypeLabel: standardsStore.supplierTypes.find((option) => option.value === item.supplierType)?.label || item.supplierType,
+    requiredLabels: (item.requiredDocuments || []).map((value) => documentTypeLabel(value)),
+    recommendedLabels: (item.recommendedDocuments || []).map((value) => documentTypeLabel(value)),
+  })),
+)
+const adminUploadBatches = computed(() => {
+  const groups = new Map()
+
+  reviewsStore.enrichedDocuments
+    .filter((item) => item.uploadSource === 'admin' && item.batchNo)
+    .forEach((item) => {
+      const current = groups.get(item.batchNo) || {
+        batchNo: item.batchNo,
+        latestAt: item.uploadedAt,
+        supplierNames: new Set(),
+        categories: new Set(),
+        count: 0,
+      }
+
+      current.latestAt = new Date(item.uploadedAt) > new Date(current.latestAt) ? item.uploadedAt : current.latestAt
+      current.supplierNames.add(suppliersStore.currentSupplier(item.supplierId)?.enterprise.enterpriseName || item.supplierId)
+      current.categories.add(documentTypeLabel(item.category))
+      current.count += 1
+      groups.set(item.batchNo, current)
+    })
+
+  return Array.from(groups.values())
+    .map((item) => ({
+      ...item,
+      supplierNames: Array.from(item.supplierNames),
+      categories: Array.from(item.categories),
+    }))
+    .sort((a, b) => new Date(b.latestAt) - new Date(a.latestAt))
+    .slice(0, 4)
+})
+const notificationBatches = computed(() => {
+  const groups = new Map()
+
+  reviewsStore.notificationLogs
+    .filter((item) => item.batchNo)
+    .forEach((item) => {
+      const current = groups.get(item.batchNo) || {
+        batchNo: item.batchNo,
+        latestAt: item.sentAt,
+        supplierNames: new Set(),
+        levels: new Set(),
+        count: 0,
+      }
+
+      current.latestAt = new Date(item.sentAt) > new Date(current.latestAt) ? item.sentAt : current.latestAt
+      current.supplierNames.add(item.supplierName)
+      current.levels.add(item.riskLabel)
+      current.count += 1
+      groups.set(item.batchNo, current)
+    })
+
+  return Array.from(groups.values())
+    .map((item) => ({
+      ...item,
+      supplierNames: Array.from(item.supplierNames),
+      levels: Array.from(item.levels),
+    }))
+    .sort((a, b) => new Date(b.latestAt) - new Date(a.latestAt))
+    .slice(0, 4)
+})
+const importBatchRows = computed(() => suppliersStore.recentImportBatches.slice(0, 6))
+const selectedImportRows = computed(() => importCandidates.filter((item) => selectedImportIds.value.includes(item.id)))
+
+function documentTypeLabel(value) {
+  return standardsStore.documentTypes.find((item) => item.value === value)?.label || value
+}
 
 function openDrawer(row, initialTab = 'profile') {
   currentSupplierId.value = row.id
@@ -139,6 +283,19 @@ function resetCreateForm() {
 function openCreateDialog() {
   resetCreateForm()
   createDialogVisible.value = true
+}
+
+function lifecycleTagType(value) {
+  return value === 'frozen' ? 'danger' : value === 'watch' ? 'warning' : 'success'
+}
+
+function lifecycleLabel(value) {
+  return value === 'frozen' ? '已冻结' : value === 'watch' ? '重点观察' : '正常'
+}
+
+function openImportDialog() {
+  selectedImportIds.value = []
+  importDialogVisible.value = true
 }
 
 function sendNotification(row) {
@@ -247,6 +404,33 @@ async function submitCreateSupplier() {
     }
   }, 500)
 }
+
+function handleImportSelectionChange(rows) {
+  selectedImportIds.value = rows.map((item) => item.id)
+}
+
+function submitImportSuppliers() {
+  importingSuppliers.value = true
+
+  setTimeout(() => {
+    try {
+      const result = suppliersStore.importSuppliersByAdmin({
+        items: selectedImportRows.value,
+        operatorName: authStore.displayName,
+        note: '通过管理员批量导入建立存量供应商电子档案',
+      })
+      importDialogVisible.value = false
+      ElMessage.success(`已导入 ${result.importedSuppliers.length} 家存量供应商，并建立电子档案。`)
+      if (result.importedSuppliers[0]) {
+        openDrawer(result.importedSuppliers[0], 'archive')
+      }
+    } catch (error) {
+      ElMessage.error(error.message)
+    } finally {
+      importingSuppliers.value = false
+    }
+  }, 600)
+}
 </script>
 
 <template>
@@ -270,6 +454,7 @@ async function submitCreateSupplier() {
         />
         <el-button type="primary" plain @click="applyKeywordSearch">搜索</el-button>
         <el-button plain @click="resetKeywordSearch">重置</el-button>
+        <el-button type="warning" plain @click="openImportDialog">批量导入存量供应商</el-button>
         <el-button type="primary" @click="openCreateDialog">新增供应商</el-button>
       </div>
       <div class="table-scroll">
@@ -285,6 +470,16 @@ async function submitCreateSupplier() {
           <el-table-column prop="approvedCount" label="已通过数" min-width="110" />
           <el-table-column prop="riskCount" label="风险文件数" min-width="110" />
           <el-table-column prop="notifiedCount" label="通知次数" min-width="110" />
+          <el-table-column label="档案来源" min-width="130">
+            <template #default="{ row }">
+              {{ row.lifecycle.archiveSource === 'batch-import' ? '批量导入' : row.lifecycle.archiveSource === 'admin-created' ? '管理员建档' : '供应商注册' }}
+            </template>
+          </el-table-column>
+          <el-table-column label="生命周期" min-width="120">
+            <template #default="{ row }">
+              <el-tag :type="lifecycleTagType(row.lifecycle.status)">{{ lifecycleLabel(row.lifecycle.status) }}</el-tag>
+            </template>
+          </el-table-column>
           <el-table-column label="入驻时间" min-width="160">
             <template #default="{ row }">{{ formatDateTime(row.registeredAt) }}</template>
           </el-table-column>
@@ -300,7 +495,127 @@ async function submitCreateSupplier() {
       </div>
     </div>
 
-    <el-drawer v-model="drawerVisible" :title="currentSupplier?.enterprise.enterpriseName" size="60%">
+    <div class="section-card showcase-wrapper">
+      <div class="panel-title">
+        <div>
+          <h3>Mock 示例区</h3>
+          <p>这部分不再挡在主操作区前面，平时可以收起，需要演示时再展开。</p>
+        </div>
+      </div>
+      <el-collapse v-model="showcaseOpen">
+        <el-collapse-item title="查看材料组合、批量代上传和批量通知示例" name="mock-showcases">
+          <div class="showcase-grid">
+            <div class="section-card showcase-panel">
+              <div class="panel-title">
+                <div>
+                  <h3>供应商类型材料组合示例</h3>
+                  <p>把不同供应商类型和准入模板需要的材料直接展示出来，方便 mock 演示时快速切换场景。</p>
+                </div>
+                <el-tag type="success">{{ templateShowcases.length }} 套模板</el-tag>
+              </div>
+              <div class="template-showcase-list">
+                <div v-for="item in templateShowcases" :key="item.id" class="template-showcase-item">
+                  <div class="template-showcase-head">
+                    <strong>{{ item.name }}</strong>
+                    <el-tag>{{ item.supplierTypeLabel }}</el-tag>
+                  </div>
+                  <p>{{ item.productLevel }} 级准入 · 门槛 {{ item.threshold }} 分</p>
+                  <div class="mini-section">
+                    <span>必传材料</span>
+                    <div class="capsule-list">
+                      <span v-for="label in item.requiredLabels" :key="`${item.id}-${label}`" class="capsule-item">{{ label }}</span>
+                    </div>
+                  </div>
+                  <div v-if="item.recommendedLabels.length" class="mini-section">
+                    <span>推荐补充</span>
+                    <div class="capsule-list">
+                      <span
+                        v-for="label in item.recommendedLabels"
+                        :key="`${item.id}-extra-${label}`"
+                        class="capsule-item soft"
+                      >
+                        {{ label }}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="section-card showcase-panel">
+              <div class="panel-title">
+                <div>
+                  <h3>批量代上传演示</h3>
+                  <p>展示管理员为多家供应商集中补档的 mock 批次，便于验证后台集中管理路径。</p>
+                </div>
+                <el-tag type="warning">{{ adminUploadBatches.length }} 个批次</el-tag>
+              </div>
+              <div v-if="adminUploadBatches.length" class="batch-list">
+                <div v-for="item in adminUploadBatches" :key="item.batchNo" class="batch-item">
+                  <div class="batch-item-head">
+                    <strong>{{ item.batchNo }}</strong>
+                    <el-tag type="warning">{{ item.count }} 份文件</el-tag>
+                  </div>
+                  <p>{{ item.supplierNames.join('、') }}</p>
+                  <div class="capsule-list">
+                    <span v-for="label in item.categories" :key="`${item.batchNo}-${label}`" class="capsule-item">{{ label }}</span>
+                  </div>
+                  <span class="batch-time">{{ formatDateTime(item.latestAt) }}</span>
+                </div>
+              </div>
+              <div v-else class="rich-empty">当前还没有批量代上传示例。</div>
+            </div>
+
+            <div class="section-card showcase-panel">
+              <div class="panel-title">
+                <div>
+                  <h3>批量通知演示</h3>
+                  <p>模拟管理员一键向多家供应商发送风险通知，便于验证通知批次、级别和覆盖面。</p>
+                </div>
+                <el-tag type="danger">{{ notificationBatches.length }} 个批次</el-tag>
+              </div>
+              <div v-if="notificationBatches.length" class="batch-list">
+                <div v-for="item in notificationBatches" :key="item.batchNo" class="batch-item">
+                  <div class="batch-item-head">
+                    <strong>{{ item.batchNo }}</strong>
+                    <el-tag type="danger">{{ item.count }} 条通知</el-tag>
+                  </div>
+                  <p>{{ item.supplierNames.join('、') }}</p>
+                  <div class="capsule-list">
+                    <span v-for="label in item.levels" :key="`${item.batchNo}-${label}`" class="capsule-item soft">{{ label }}</span>
+                  </div>
+                  <span class="batch-time">{{ formatDateTime(item.latestAt) }}</span>
+                </div>
+              </div>
+              <div v-else class="rich-empty">当前还没有批量通知示例。</div>
+            </div>
+          </div>
+        </el-collapse-item>
+      </el-collapse>
+    </div>
+
+    <div class="section-card showcase-wrapper">
+      <div class="panel-title">
+        <div>
+          <h3>批量导入记录</h3>
+          <p>保留最近的存量供应商导入批次，方便后续追溯是通过哪次导入建立电子档案。</p>
+        </div>
+      </div>
+      <el-table :data="importBatchRows" class="app-table" stripe>
+        <el-table-column prop="batchNo" label="导入批次" min-width="180" />
+        <el-table-column label="导入时间" min-width="160">
+          <template #default="{ row }">{{ formatDateTime(row.importedAt) }}</template>
+        </el-table-column>
+        <el-table-column prop="operatorName" label="操作人" min-width="120" />
+        <el-table-column prop="successCount" label="成功数" min-width="90" />
+        <el-table-column prop="skippedCount" label="跳过数" min-width="90" />
+        <el-table-column label="导入供应商" min-width="280">
+          <template #default="{ row }">{{ row.supplierNames.join('、') || '--' }}</template>
+        </el-table-column>
+      </el-table>
+    </div>
+
+    <el-drawer v-model="drawerVisible" :title="currentSupplier?.enterprise.enterpriseName" size="60%" append-to-body>
       <el-tabs v-model="tab">
         <el-tab-pane label="企业档案" name="profile">
           <div class="metric-row">
@@ -318,6 +633,87 @@ async function submitCreateSupplier() {
           <div class="metric-row">
             <span>经营范围</span>
             <strong>{{ currentSupplier?.enterprise.businessScope }}</strong>
+          </div>
+        </el-tab-pane>
+
+        <el-tab-pane label="电子档案" name="archive">
+          <div class="content-grid archive-grid">
+            <div class="section-card upload-card">
+              <div class="panel-title">
+                <div>
+                  <h3>档案摘要</h3>
+                  <p>集中查看存量导入来源、生命周期状态和当前归档情况。</p>
+                </div>
+                <el-tag :type="lifecycleTagType(currentLifecycle.status)">{{ lifecycleLabel(currentLifecycle.status) }}</el-tag>
+              </div>
+              <div class="metric-row">
+                <span>档案来源</span>
+                <strong>{{ currentLifecycle.archiveSource === 'batch-import' ? '批量导入' : currentLifecycle.archiveSource === 'admin-created' ? '管理员建档' : '供应商注册' }}</strong>
+              </div>
+              <div class="metric-row">
+                <span>登录账号</span>
+                <strong>{{ currentSupplier?.account }}</strong>
+              </div>
+              <div class="metric-row">
+                <span>最近巡检</span>
+                <strong>{{ currentLifecycle.lastRiskScanAt ? formatDateTime(currentLifecycle.lastRiskScanAt) : '--' }}</strong>
+              </div>
+              <div class="metric-row">
+                <span>最新重审触发</span>
+                <strong>{{ currentLifecycle.latestReviewTrigger || '--' }}</strong>
+              </div>
+              <div class="metric-row">
+                <span>冻结原因</span>
+                <strong>{{ currentLifecycle.freezeReason || '--' }}</strong>
+              </div>
+              <div class="metric-row">
+                <span>档案标签</span>
+                <div class="capsule-list">
+                  <span v-for="item in currentLifecycle.tags || []" :key="item" class="capsule-item">{{ item }}</span>
+                  <span v-if="!(currentLifecycle.tags || []).length" class="status-text">暂无</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="section-card upload-card">
+              <div class="panel-title">
+                <div>
+                  <h3>归档文件概览</h3>
+                  <p>优先展示已通过和已归档文件，便于快速判断历史资质沉淀情况。</p>
+                </div>
+              </div>
+              <el-table :data="currentApprovedRecords" class="app-table" stripe>
+                <el-table-column prop="fileName" label="文件名称" min-width="220" />
+                <el-table-column label="文件类型" min-width="150">
+                  <template #default="{ row }">{{ documentTypeLabel(row.category) }}</template>
+                </el-table-column>
+                <el-table-column label="有效期" min-width="120">
+                  <template #default="{ row }">{{ row.extractedFields.validUntil || '--' }}</template>
+                </el-table-column>
+                <el-table-column label="归档状态" min-width="110">
+                  <template #default="{ row }">
+                    <StatusTag :status="row.status" />
+                  </template>
+                </el-table-column>
+              </el-table>
+            </div>
+          </div>
+
+          <div class="section-card upload-card">
+            <div class="panel-title">
+              <div>
+                <h3>生命周期日志</h3>
+                <p>记录导入建档、冻结、重点观察、重审触发等关键动作。</p>
+              </div>
+            </div>
+            <div v-if="(currentLifecycle.lifecycleLogs || []).length" class="timeline-list">
+              <div v-for="item in currentLifecycle.lifecycleLogs" :key="item.id" class="timeline-item">
+                <strong>{{ item.action }}</strong>
+                <span>{{ item.actor }} · {{ formatDateTime(item.at) }}</span>
+                <p>{{ item.note }}</p>
+              </div>
+            </div>
+            <div v-else class="rich-empty">当前还没有生命周期日志。</div>
           </div>
         </el-tab-pane>
 
@@ -367,9 +763,7 @@ async function submitCreateSupplier() {
             <el-table-column prop="precheckScore" label="预审分" min-width="90" />
             <el-table-column label="审核状态" min-width="110">
               <template #default="{ row }">
-                <el-tag :type="row.status === 'approved' ? 'success' : row.status === 'rejected' ? 'danger' : 'warning'">
-                  {{ row.status === 'approved' ? '已通过' : row.status === 'rejected' ? '未通过' : '审核中' }}
-                </el-tag>
+                <StatusTag :status="row.status" />
               </template>
             </el-table-column>
             <el-table-column label="风险状态" min-width="130">
@@ -411,7 +805,7 @@ async function submitCreateSupplier() {
                   <el-option
                     v-for="item in replaceableRecords"
                     :key="item.id"
-                    :label="`${item.fileName}｜${item.status === 'approved' ? '已通过' : item.status === 'rejected' ? '未通过' : '审核中'}`"
+                    :label="`${item.fileName}｜${item.status === 'approved' ? '已通过' : item.status === 'conditional' ? '有条件通过' : item.status === 'rejected' ? '未通过' : '审核中'}`"
                     :value="item.id"
                   />
                 </el-select>
@@ -480,7 +874,7 @@ async function submitCreateSupplier() {
       </el-tabs>
     </el-drawer>
 
-    <el-dialog v-model="createDialogVisible" title="新增供应商" width="760px">
+    <el-dialog v-model="createDialogVisible" title="新增供应商" width="760px" append-to-body align-center>
       <el-form ref="createFormRef" :model="createForm" :rules="createRules" label-position="top">
         <div class="create-form-grid">
           <el-form-item label="登录账号">
@@ -548,13 +942,90 @@ async function submitCreateSupplier() {
         </div>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="importDialogVisible" title="批量导入存量供应商" width="920px" append-to-body align-center>
+      <div class="content-grid">
+        <el-alert
+          type="warning"
+          :closable="false"
+          title="当前为纯前端 Mock 导入：会直接建立供应商账号和电子档案，不会真的解析 Excel。"
+        />
+        <el-table :data="importCandidates" class="app-table" stripe @selection-change="handleImportSelectionChange">
+          <el-table-column type="selection" width="52" />
+          <el-table-column prop="enterpriseName" label="供应商名称" min-width="220" />
+          <el-table-column prop="creditCode" label="统一社会信用代码" min-width="180" />
+          <el-table-column label="供应商类型" min-width="140">
+            <template #default="{ row }">
+              {{ standardsStore.supplierTypes.find((item) => item.value === row.supplierType)?.label }}
+            </template>
+          </el-table-column>
+          <el-table-column label="生命周期" min-width="120">
+            <template #default="{ row }">
+              <el-tag :type="lifecycleTagType(row.lifecycleStatus)">{{ lifecycleLabel(row.lifecycleStatus) }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column prop="note" label="导入说明" min-width="280" />
+        </el-table>
+        <div class="section-card upload-card">
+          <div class="panel-title">
+            <div>
+              <h3>本次导入预览</h3>
+              <p>导入后将自动建立账号、电子档案和生命周期初始记录。</p>
+            </div>
+            <el-tag type="success">{{ selectedImportRows.length }} 家</el-tag>
+          </div>
+          <div class="capsule-list">
+            <span v-for="item in selectedImportRows" :key="item.id" class="capsule-item">{{ item.enterpriseName }}</span>
+            <span v-if="!selectedImportRows.length" class="status-text">请先勾选要导入的供应商</span>
+          </div>
+        </div>
+      </div>
+      <template #footer>
+        <div class="toolbar" style="justify-content: flex-end">
+          <el-button @click="importDialogVisible = false">取消</el-button>
+          <el-button type="primary" :loading="importingSuppliers" @click="submitImportSuppliers">确认导入并建档</el-button>
+        </div>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <style scoped>
+.archive-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.showcase-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.showcase-wrapper,
+.showcase-panel,
 .table-card,
 .upload-card {
   padding: 20px;
+}
+
+.showcase-wrapper :deep(.el-collapse) {
+  border-top: none;
+  border-bottom: none;
+}
+
+.showcase-wrapper :deep(.el-collapse-item__header) {
+  font-weight: 600;
+  color: var(--brand-deep);
+}
+
+.showcase-wrapper :deep(.el-collapse-item__wrap) {
+  border-bottom: none;
+}
+
+.showcase-wrapper :deep(.el-collapse-item__content) {
+  padding-bottom: 0;
 }
 
 .table-card {
@@ -578,9 +1049,79 @@ async function submitCreateSupplier() {
   color: var(--text-muted);
 }
 
+.timeline-list {
+  display: grid;
+  gap: 12px;
+}
+
+.timeline-item {
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(248, 251, 255, 0.92);
+  border: 1px solid var(--line-soft);
+}
+
+.timeline-item p {
+  margin: 8px 0 0;
+  color: var(--text-secondary);
+  line-height: 1.7;
+}
+
+.timeline-item span {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
 .table-scroll {
   width: 100%;
   overflow-x: auto;
+}
+
+.template-showcase-list,
+.batch-list {
+  display: grid;
+  gap: 12px;
+}
+
+.template-showcase-item,
+.batch-item {
+  padding: 14px;
+  border-radius: 16px;
+  border: 1px solid var(--line-soft);
+  background: rgba(255, 255, 255, 0.86);
+}
+
+.template-showcase-head,
+.batch-item-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
+.template-showcase-item p,
+.batch-item p {
+  margin: 8px 0 12px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.mini-section + .mini-section {
+  margin-top: 10px;
+}
+
+.mini-section span {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.batch-time {
+  display: block;
+  margin-top: 10px;
+  color: var(--text-muted);
+  font-size: 12px;
 }
 
 .create-form-grid {
@@ -593,7 +1134,19 @@ async function submitCreateSupplier() {
   grid-column: span 2;
 }
 
+@media (max-width: 1200px) {
+  .archive-grid,
+  .showcase-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 @media (max-width: 768px) {
+  .archive-grid,
+  .showcase-grid {
+    grid-template-columns: 1fr;
+  }
+
   .create-form-grid {
     grid-template-columns: 1fr;
   }

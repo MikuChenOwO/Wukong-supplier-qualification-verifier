@@ -12,7 +12,7 @@ import MachineBadge from '../../components/MachineBadge.vue'
 import RiskStatusTag from '../../components/RiskStatusTag.vue'
 import ScoreSummary from '../../components/ScoreSummary.vue'
 import StatusTag from '../../components/StatusTag.vue'
-import { formatDateTime, formatPhone } from '../../utils/format'
+import { formatDate, formatDateTime, formatPhone } from '../../utils/format'
 
 const route = useRoute()
 const authStore = useAuthStore()
@@ -31,6 +31,10 @@ const latestNotification = computed(() => reviewsStore.latestNotificationByRecor
 const reviewForm = reactive({
   status: 'approved',
   opinion: '',
+  unmetClausesText: '',
+  improvementSuggestionsText: '',
+  appealable: false,
+  appealDeadline: '',
   quality: 0,
   technical: 0,
   business: 0,
@@ -43,6 +47,10 @@ watch(
     if (!value) return
     reviewForm.status = value.status
     reviewForm.opinion = value.adminOpinion || ''
+    reviewForm.unmetClausesText = (value.unmetClauses || []).join('\n')
+    reviewForm.improvementSuggestionsText = (value.improvementSuggestions || []).join('\n')
+    reviewForm.appealable = Boolean(value.appealable)
+    reviewForm.appealDeadline = value.appealDeadline ? value.appealDeadline.slice(0, 10) : ''
     reviewForm.quality = value.scoreBreakdown.quality
     reviewForm.technical = value.scoreBreakdown.technical
     reviewForm.business = value.scoreBreakdown.business
@@ -72,6 +80,10 @@ function submitReview() {
         reviewerName: authStore.displayName,
         status: reviewForm.status,
         opinion: reviewForm.opinion,
+        unmetClauses: reviewForm.unmetClausesText,
+        improvementSuggestions: reviewForm.improvementSuggestionsText,
+        appealable: reviewForm.appealable,
+        appealDeadline: reviewForm.appealDeadline ? `${reviewForm.appealDeadline}T23:59:59` : '',
         scoreBreakdown: {
           quality: reviewForm.quality,
           technical: reviewForm.technical,
@@ -154,6 +166,10 @@ function sendNotification() {
           <div class="metric-row">
             <span>上传来源</span>
             <strong>{{ record.uploadSource === 'admin' ? '管理员代上传' : '供应商上传' }}</strong>
+          </div>
+          <div class="metric-row">
+            <span>申诉资格</span>
+            <strong>{{ record.appealable ? `可申诉，截止 ${formatDate(record.appealDeadline)}` : '当前不可申诉' }}</strong>
           </div>
         </div>
 
@@ -238,6 +254,7 @@ function sendNotification() {
             <el-form-item label="审核结论">
               <el-radio-group v-model="reviewForm.status" :disabled="record.status === 'approved'">
                 <el-radio label="approved">通过</el-radio>
+                <el-radio label="conditional">有条件通过</el-radio>
                 <el-radio label="rejected">未通过</el-radio>
                 <el-radio label="pending">保持审核中</el-radio>
               </el-radio-group>
@@ -251,6 +268,44 @@ function sendNotification() {
                 :disabled="record.status === 'approved'"
               />
             </el-form-item>
+            <el-form-item
+              v-if="reviewForm.status === 'conditional' || reviewForm.status === 'rejected'"
+              label="未满足条款"
+            >
+              <el-input
+                v-model="reviewForm.unmetClausesText"
+                type="textarea"
+                :rows="4"
+                placeholder="每行填写一条，例如：认证范围未覆盖本次准入采购范围"
+                :disabled="record.status === 'approved'"
+              />
+            </el-form-item>
+            <el-form-item
+              v-if="reviewForm.status === 'conditional' || reviewForm.status === 'rejected'"
+              label="改进建议"
+            >
+              <el-input
+                v-model="reviewForm.improvementSuggestionsText"
+                type="textarea"
+                :rows="4"
+                placeholder="每行填写一条改进建议，后续会展示给供应商"
+                :disabled="record.status === 'approved'"
+              />
+            </el-form-item>
+            <div v-if="reviewForm.status === 'conditional' || reviewForm.status === 'rejected'" class="appeal-box">
+              <el-checkbox v-model="reviewForm.appealable" :disabled="record.status === 'approved'">
+                允许供应商申诉
+              </el-checkbox>
+              <el-date-picker
+                v-if="reviewForm.appealable"
+                v-model="reviewForm.appealDeadline"
+                type="date"
+                value-format="YYYY-MM-DD"
+                placeholder="选择申诉截止日期"
+                style="width: 100%; margin-top: 12px"
+                :disabled="record.status === 'approved'"
+              />
+            </div>
           </el-form>
         </div>
         <div class="score-form">
@@ -284,7 +339,7 @@ function sendNotification() {
         <el-button type="primary" :loading="loading" :disabled="record.status === 'approved'" @click="submitReview">
           提交审核
         </el-button>
-        <span class="status-text">已通过文件会锁定结果；高风险或未通过文件可继续发送短信提醒供应商处理。</span>
+        <span class="status-text">已通过文件会锁定结果；有条件通过或未通过的文件可补充未满足条款、改进建议和申诉资格。</span>
       </div>
     </div>
   </div>
@@ -328,6 +383,14 @@ function sendNotification() {
   border-radius: 18px;
   background: rgba(248, 251, 255, 0.82);
   padding: 14px 16px;
+}
+
+.appeal-box {
+  margin-top: 6px;
+  padding: 14px;
+  border-radius: 14px;
+  background: rgba(248, 251, 255, 0.9);
+  border: 1px solid var(--line-soft);
 }
 
 .notify-log-list {

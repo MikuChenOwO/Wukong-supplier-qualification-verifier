@@ -45,7 +45,7 @@ function reupload(row) {
     <div class="page-title">
       <div>
         <h1>我的核验记录</h1>
-        <p>可查看每份资质的机器核验结果、人工审核状态、未通过原因与重新上传入口。</p>
+        <p>可查看每份资质的机器核验结果、人工审核状态、未满足条款、改进建议与重新上传入口。</p>
       </div>
     </div>
 
@@ -55,6 +55,7 @@ function reupload(row) {
         <el-select v-model="filters.status" placeholder="审核状态" clearable style="width: 160px">
           <el-option label="审核中" value="pending" />
           <el-option label="已通过" value="approved" />
+          <el-option label="有条件通过" value="conditional" />
           <el-option label="未通过" value="rejected" />
         </el-select>
         <el-select v-model="filters.category" placeholder="文件类型" clearable style="width: 180px">
@@ -91,13 +92,21 @@ function reupload(row) {
             <div class="toolbar">
               <el-button text type="primary" @click="openDetail(row)">查看详情</el-button>
               <el-button text type="primary" @click="openDetail(row)">在线预览</el-button>
+              <el-button
+                v-if="row.appealable"
+                text
+                type="warning"
+                @click="$router.push(`/supplier/appeals?recordId=${row.id}`)"
+              >
+                发起申诉
+              </el-button>
               <el-button v-if="row.status === 'rejected'" text type="danger" @click="reupload(row)">重新上传</el-button>
             </div>
           </template>
         </el-table-column>
       </el-table>
       <div
-        v-for="row in filteredRecords.filter((item) => item.status === 'rejected')"
+        v-for="row in filteredRecords.filter((item) => item.status === 'rejected' || item.status === 'conditional')"
         :key="`${row.id}-reason`"
         class="reject-note"
       >

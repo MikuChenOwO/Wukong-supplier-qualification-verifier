@@ -15,6 +15,8 @@ const menus = [
   { index: '/supplier/overview', label: '总览', icon: 'DataAnalysis' },
   { index: '/supplier/company', label: '企业信息', icon: 'OfficeBuilding' },
   { index: '/supplier/upload', label: '文件管理', icon: 'UploadFilled' },
+  { index: '/supplier/results', label: '结果与申诉', icon: 'Tickets' },
+  { index: '/supplier/appeals', label: '申诉记录', icon: 'ChatLineSquare' },
   { index: '/supplier/records', label: '核验记录', icon: 'DocumentChecked' },
   { index: '/supplier/help', label: '帮助中心', icon: 'Reading' },
 ]

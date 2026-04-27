@@ -162,6 +162,7 @@ function sendNotification(row) {
         <el-select v-model="filters.status" placeholder="审核状态" clearable style="width: 160px">
           <el-option label="审核中" value="pending" />
           <el-option label="已通过" value="approved" />
+          <el-option label="有条件通过" value="conditional" />
           <el-option label="未通过" value="rejected" />
         </el-select>
         <el-select v-model="filters.category" placeholder="文件类型" clearable style="width: 180px">

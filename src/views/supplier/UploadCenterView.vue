@@ -295,6 +295,14 @@ function renewalTagType(level) {
                 <strong>{{ currentTemplate?.threshold }} 分</strong>
               </div>
               <div class="metric-row">
+                <span>必传材料组合</span>
+                <strong>{{ (currentTemplate?.requiredDocuments || []).map((item) => standardsStore.documentTypes.find((doc) => doc.value === item)?.label || item).join(' / ') || '待配置' }}</strong>
+              </div>
+              <div class="metric-row">
+                <span>推荐补充材料</span>
+                <strong>{{ (currentTemplate?.recommendedDocuments || []).map((item) => standardsStore.documentTypes.find((doc) => doc.value === item)?.label || item).join(' / ') || '无' }}</strong>
+              </div>
+              <div class="metric-row">
                 <span>一票否决</span>
                 <strong>{{ currentTemplate?.vetoRules?.join('；') || '无' }}</strong>
               </div>

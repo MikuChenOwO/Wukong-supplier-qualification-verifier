@@ -45,7 +45,7 @@ function exportExcel() {
     <div class="page-title">
       <div>
         <h1>审核日志</h1>
-        <p>集中保留所有审核记录、审核人、审核时间、结果和意见，并支持 Mock 导出 Excel。</p>
+        <p>集中保留审核、申诉提交、申诉复核、补件与结案等全流程记录，并支持 Mock 导出 Excel。</p>
       </div>
       <el-button type="primary" @click="exportExcel">导出 Excel</el-button>
     </div>

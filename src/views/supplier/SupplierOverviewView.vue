@@ -5,6 +5,7 @@ import { useReviewsStore } from '../../stores/reviews'
 import { useStandardsStore } from '../../stores/standards'
 import { useSuppliersStore } from '../../stores/suppliers'
 import RiskStatusTag from '../../components/RiskStatusTag.vue'
+import StatusTag from '../../components/StatusTag.vue'
 import StatCard from '../../components/StatCard.vue'
 import { formatDateTime, formatDate } from '../../utils/format'
 
@@ -16,14 +17,19 @@ const standardsStore = useStandardsStore()
 const supplier = computed(() => suppliersStore.currentSupplier(authStore.userId))
 const records = computed(() => reviewsStore.recordsBySupplier(authStore.userId))
 const riskRecords = computed(() => reviewsStore.riskRecordsBySupplier(authStore.userId))
+const resultRecords = computed(() => records.value.filter((item) => item.status === 'conditional' || item.status === 'rejected'))
 const approvedCount = computed(() => records.value.filter((item) => item.status === 'approved').length)
+const conditionalCount = computed(() => records.value.filter((item) => item.status === 'conditional').length)
 const pendingCount = computed(() => records.value.filter((item) => item.status === 'pending').length)
 const criticalCount = computed(() => riskRecords.value.filter((item) => item.riskStatus.code === 'critical').length)
 const notifiedCount = computed(() => riskRecords.value.filter((item) => item.notificationState.count > 0).length)
+const appealableCount = computed(() => resultRecords.value.filter((item) => item.appealable).length)
+const submittedAppealCount = computed(() => reviewsStore.appealsBySupplier(authStore.userId).length)
 const latestApproved = computed(() => reviewsStore.latestApprovedRecordBySupplier(authStore.userId))
 const nextReviewAt = computed(() => latestApproved.value?.nextReviewAt || '')
 const currentTemplate = computed(() => standardsStore.findTemplateById(supplier.value?.enterprise.templateId))
 const latestRiskRecords = computed(() => riskRecords.value.slice(0, 4))
+const latestResultRecords = computed(() => resultRecords.value.slice(0, 3))
 </script>
 
 <template>
@@ -111,6 +117,42 @@ const latestRiskRecords = computed(() => riskRecords.value.slice(0, 4))
     <div class="content-grid two-col">
       <div class="section-card overview-panel">
         <div class="panel-title">
+          <h3>结果与申诉入口</h3>
+          <el-button text @click="$router.push('/supplier/results')">进入结果中心</el-button>
+        </div>
+        <div class="result-summary-grid">
+          <div class="mini-stat">
+            <span>有条件通过</span>
+            <strong>{{ conditionalCount }}</strong>
+          </div>
+          <div class="mini-stat">
+            <span>可申诉</span>
+            <strong>{{ appealableCount }}</strong>
+          </div>
+          <div class="mini-stat">
+            <span>已提交申诉</span>
+            <strong>{{ submittedAppealCount }}</strong>
+          </div>
+        </div>
+        <div v-if="latestResultRecords.length" class="result-preview-list">
+          <div v-for="item in latestResultRecords" :key="item.id" class="result-preview-item">
+            <div class="result-preview-head">
+              <strong>{{ item.fileName }}</strong>
+              <StatusTag :status="item.status" />
+            </div>
+            <p>{{ item.adminOpinion || '请进入详情查看审核意见。' }}</p>
+            <div class="toolbar">
+              <el-tag :type="item.appealable ? 'warning' : 'info'">{{ item.appealable ? '可申诉' : '不可申诉' }}</el-tag>
+              <el-button text type="primary" @click="$router.push(`/supplier/results?recordId=${item.id}`)">查看结论</el-button>
+              <el-button v-if="item.appealable" text type="warning" @click="$router.push(`/supplier/appeals?recordId=${item.id}`)">提交申诉</el-button>
+            </div>
+          </div>
+        </div>
+        <div v-else class="rich-empty">当前暂无需要重点跟进的审核结果。</div>
+      </div>
+
+      <div class="section-card overview-panel">
+        <div class="panel-title">
           <h3>最近核验记录</h3>
           <el-button text @click="$router.push('/supplier/records')">查看全部</el-button>
         </div>
@@ -162,6 +204,56 @@ const latestRiskRecords = computed(() => riskRecords.value.slice(0, 4))
   gap: 12px;
 }
 
+.result-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.mini-stat {
+  padding: 14px;
+  border-radius: 16px;
+  background: rgba(248, 251, 255, 0.92);
+  border: 1px solid var(--line-soft);
+}
+
+.mini-stat span {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.mini-stat strong {
+  display: block;
+  margin-top: 10px;
+  font-size: 28px;
+}
+
+.result-preview-list {
+  display: grid;
+  gap: 12px;
+}
+
+.result-preview-item {
+  border: 1px solid var(--line-soft);
+  border-radius: 16px;
+  padding: 14px;
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.result-preview-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
+.result-preview-item p {
+  margin: 10px 0;
+  color: var(--text-secondary);
+  line-height: 1.7;
+}
+
 .risk-item {
   border: 1px solid var(--line-soft);
   border-radius: 16px;
@@ -196,5 +288,11 @@ const latestRiskRecords = computed(() => riskRecords.value.slice(0, 4))
   margin: 8px 0 0;
   color: var(--text-muted);
   line-height: 1.8;
+}
+
+@media (max-width: 1180px) {
+  .result-summary-grid {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

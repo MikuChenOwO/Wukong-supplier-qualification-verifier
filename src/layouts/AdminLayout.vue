@@ -10,9 +10,12 @@ const authStore = useAuthStore()
 const reviewsStore = useReviewsStore()
 
 const pendingCount = computed(() => reviewsStore.pendingRecords.length)
+const appealCount = computed(() => reviewsStore.activeAppealCount)
 
 const menus = [
   { index: '/admin/reviews', label: '待审核列表', icon: 'Tickets' },
+  { index: '/admin/appeals', label: '申诉复核台', icon: 'ChatDotSquare' },
+  { index: '/admin/risk-radar', label: '动态风控', icon: 'Monitor' },
   { index: '/admin/suppliers', label: '供应商管理', icon: 'UserFilled' },
   { index: '/admin/standards', label: '标准管理', icon: 'Files' },
   { index: '/admin/logs', label: '审核日志', icon: 'Histogram' },
@@ -51,6 +54,7 @@ function logout() {
         <div class="aside-footer section-card">
           <div class="aside-title">待办概况</div>
           <strong>{{ pendingCount }} 份待审核文件</strong>
+          <div class="status-text">{{ appealCount }} 条申诉待处理</div>
           <div class="status-text">审核动作仅更新结果和意见，不改原始资料</div>
         </div>
       </el-aside>
@@ -63,6 +67,9 @@ function logout() {
           <div class="toolbar">
             <el-badge :value="pendingCount" :max="99">
               <el-button plain @click="router.push('/admin/reviews')">待审核</el-button>
+            </el-badge>
+            <el-badge :value="appealCount" :max="99">
+              <el-button plain @click="router.push('/admin/appeals')">申诉复核</el-button>
             </el-badge>
             <el-button type="primary" @click="logout">退出登录</el-button>
           </div>

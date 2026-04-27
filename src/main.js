@@ -1,10 +1,13 @@
 import { createApp } from 'vue'
 import ElementPlus from 'element-plus'
 import {
+  ChatDotSquare,
+  ChatLineSquare,
   DataAnalysis,
   DocumentChecked,
   Files,
   Histogram,
+  Monitor,
   OfficeBuilding,
   Reading,
   Tickets,
@@ -19,10 +22,13 @@ import './styles.css'
 
 const app = createApp(App)
 
+app.component('ChatDotSquare', ChatDotSquare)
+app.component('ChatLineSquare', ChatLineSquare)
 app.component('DataAnalysis', DataAnalysis)
 app.component('DocumentChecked', DocumentChecked)
 app.component('Files', Files)
 app.component('Histogram', Histogram)
+app.component('Monitor', Monitor)
 app.component('OfficeBuilding', OfficeBuilding)
 app.component('Reading', Reading)
 app.component('Tickets', Tickets)
