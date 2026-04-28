@@ -45,6 +45,7 @@ const routes = [
       { path: 'reviews', name: 'admin-reviews', component: () => import('../views/admin/ReviewListView.vue') },
       { path: 'reviews/:id', name: 'admin-review-detail', component: () => import('../views/admin/ReviewDetailView.vue') },
       { path: 'appeals', name: 'admin-appeals', component: () => import('../views/admin/AdminAppealWorkbenchView.vue') },
+      { path: 'rereviews', name: 'admin-rereviews', component: () => import('../views/admin/RereviewWorkbenchView.vue') },
       { path: 'risk-radar', name: 'admin-risk-radar', component: () => import('../views/admin/RiskRadarView.vue') },
       { path: 'suppliers', name: 'admin-suppliers', component: () => import('../views/admin/SupplierManagementView.vue') },
       { path: 'standards', name: 'admin-standards', component: () => import('../views/admin/StandardManagementView.vue') },

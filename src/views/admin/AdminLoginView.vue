@@ -3,6 +3,7 @@ import { reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '../../stores/auth'
+import AppFooter from '../../components/AppFooter.vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -71,6 +72,7 @@ async function handleLogin() {
         </div>
       </div>
     </div>
+    <AppFooter />
   </div>
 </template>
 

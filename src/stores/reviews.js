@@ -1,4 +1,4 @@
-import { defineStore } from 'pinia'
+﻿import { defineStore } from 'pinia'
 import { MOCK_APPEALS, MOCK_DOCUMENTS, MOCK_NOTIFICATION_LOGS, MOCK_REVIEW_LOGS } from '../constants/mockData'
 import { createInlineImage, SAMPLE_PDF_DATA_URI } from '../utils/preview'
 import { useStandardsStore } from './standards'
@@ -82,6 +82,105 @@ function appealStatusLabel(status) {
     rejected: '申诉驳回',
     closed: '申诉已结案',
   }[status] || '申诉更新'
+}
+
+function createRereviewTaskNo(currentLength) {
+  const month = new Date().toISOString().slice(0, 7).replace('-', '')
+  return `RR-${month}-${String(currentLength + 1).padStart(4, '0')}`
+}
+
+function createHistoryBackfillBatchNo() {
+  const month = new Date().toISOString().slice(0, 7).replace('-', '')
+  return `HIS-${month}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`
+}
+
+function isRereviewActive(task) {
+  return ['pending', 'in_progress'].includes(task?.status)
+}
+
+function buildInitialRereviewTasks() {
+  return [
+    {
+      id: 'rr-001',
+      taskNo: 'RR-202604-0001',
+      supplierId: 'sup-002',
+      supplierName: '筋斗云供应链科技（上海）有限公司',
+      recordId: 'doc-004',
+      previousRecordId: '',
+      category: 'industry-cert',
+      triggerSource: 'risk-radar',
+      taskType: 'renewal',
+      status: 'pending',
+      reviewerName: '',
+      assignedAt: '',
+      reason: '行业强制认证已过期，需补传新证并发起变更重审。',
+      comment: '',
+      lifecycleStatusBefore: 'watch',
+      lifecycleStatusAfter: '',
+      createdAt: '2026-04-24T09:30:00',
+      updatedAt: '2026-04-24T09:30:00',
+      timeline: [
+        {
+          id: 'rrlog-001',
+          action: '系统触发重审',
+          actor: '系统巡检',
+          at: '2026-04-24T09:30:00',
+          note: '检测到行业强制认证已过期，已生成重审任务。',
+        },
+      ],
+    },
+    {
+      id: 'rr-002',
+      taskNo: 'RR-202604-0002',
+      supplierId: 'sup-001',
+      supplierName: '悟空精工（深圳）有限公司',
+      recordId: 'doc-002',
+      previousRecordId: '',
+      category: 'quality-system',
+      triggerSource: 'file-update',
+      taskType: 'change',
+      status: 'in_progress',
+      reviewerName: '采购审核员-金箍',
+      assignedAt: '2026-04-25T15:00:00',
+      reason: '质量体系证书临期，供应商已更新资料，进入复审中。',
+      comment: '已收到最新版扫描件，正在核对认证范围与盖章附件。',
+      lifecycleStatusBefore: 'active',
+      lifecycleStatusAfter: '',
+      createdAt: '2026-04-25T10:20:00',
+      updatedAt: '2026-04-25T15:10:00',
+      timeline: [
+        {
+          id: 'rrlog-002',
+          action: '供应商更新文件',
+          actor: '唐小白',
+          at: '2026-04-25T10:20:00',
+          note: '供应商提交了新的质量体系证书，系统自动生成复审任务。',
+        },
+        {
+          id: 'rrlog-003',
+          action: '开始复审',
+          actor: '采购审核员-金箍',
+          at: '2026-04-25T15:10:00',
+          note: '已开始核对证书有效期与认证范围。',
+        },
+      ],
+    },
+  ]
+}
+
+function enrichRereviewTask(task, record) {
+  return {
+    ...task,
+    fileName: record?.fileName || '',
+    recordStatus: record?.status || '',
+    riskStatus: record?.riskStatus || { label: '--', type: 'info' },
+    uploadedAt: record?.uploadedAt || '',
+  }
+}
+
+function enrichRereviewTaskWithRecord(task, documents, notificationLogs) {
+  const record = documents.find((item) => item.id === task.recordId)
+  return enrichRereviewTask(task, record ? enrichRecord(record, notificationLogs) : undefined)
 }
 
 function classifyRenewal(record) {
@@ -338,6 +437,7 @@ export const useReviewsStore = defineStore('reviews', {
     reviewLogs: clone(MOCK_REVIEW_LOGS),
     notificationLogs: clone(MOCK_NOTIFICATION_LOGS),
     appeals: clone(MOCK_APPEALS),
+    rereviewTasks: buildInitialRereviewTasks(),
   }),
   getters: {
     enrichedDocuments: (state) =>
@@ -412,8 +512,289 @@ export const useReviewsStore = defineStore('reviews', {
       if (!appeal) return undefined
       return enrichAppeal(appeal, state.documents.find((record) => record.id === recordId))
     },
+    allRereviewTasks: (state) =>
+      state.rereviewTasks
+        .map((item) => enrichRereviewTaskWithRecord(item, state.documents, state.notificationLogs))
+        .sort(sortByUpdatedAt),
+    activeRereviewCount: (state) => state.rereviewTasks.filter((item) => isRereviewActive(item)).length,
+    rereviewTasksBySupplier: (state) => (supplierId) =>
+      state.rereviewTasks
+        .filter((item) => item.supplierId === supplierId)
+        .map((item) => enrichRereviewTaskWithRecord(item, state.documents, state.notificationLogs))
+        .sort(sortByUpdatedAt),
+    latestRereviewByRecord: (state) => (recordId) => {
+      const task = state.rereviewTasks.filter((item) => item.recordId === recordId).slice().sort(sortByUpdatedAt)[0]
+      if (!task) return undefined
+      return enrichRereviewTaskWithRecord(task, state.documents, state.notificationLogs)
+    },
   },
   actions: {
+    createRereviewTask({
+      supplierId,
+      recordId,
+      previousRecordId = '',
+      category = '',
+      triggerSource = 'manual',
+      taskType = 'change',
+      reason = '',
+      operatorName = '系统',
+      syncLifecycle = true,
+    }) {
+      const suppliersStore = useSuppliersStore()
+      const supplier = suppliersStore.currentSupplier(supplierId)
+      if (!supplier) {
+        throw new Error('未找到对应供应商，无法创建重审任务。')
+      }
+
+      const record = this.documents.find((item) => item.id === recordId)
+      const resolvedCategory = category || record?.category || ''
+      const existing = this.rereviewTasks.find(
+        (item) =>
+          isRereviewActive(item) &&
+          item.supplierId === supplierId &&
+          (item.recordId === recordId || (resolvedCategory && item.category === resolvedCategory)),
+      )
+      if (existing) {
+        return existing
+      }
+
+      if (syncLifecycle) {
+        suppliersStore.triggerSupplierRereview(supplierId, {
+          operatorName,
+          reason: reason || '因资料更新或风险巡检触发变更重审',
+        })
+      }
+
+      const now = new Date().toISOString()
+      const task = {
+        id: createId('rr'),
+        taskNo: createRereviewTaskNo(this.rereviewTasks.length),
+        supplierId,
+        supplierName: supplier.enterprise.enterpriseName,
+        recordId,
+        previousRecordId,
+        category: resolvedCategory,
+        triggerSource,
+        taskType,
+        status: 'pending',
+        reviewerName: '',
+        assignedAt: '',
+        reason: reason || '已触发重审',
+        comment: '',
+        lifecycleStatusBefore: supplier.lifecycle.status,
+        lifecycleStatusAfter: '',
+        createdAt: now,
+        updatedAt: now,
+        timeline: [
+          {
+            id: createId('rrlog'),
+            action: '创建重审任务',
+            actor: operatorName,
+            at: now,
+            note: reason || '已生成重审任务，等待管理员处理。',
+          },
+        ],
+      }
+
+      this.rereviewTasks.unshift(task)
+      return task
+    },
+    assignRereviewTasks({ taskIds, assigneeName, operatorName = '管理员', startReview = false, comment = '' }) {
+      const normalizedAssignee = String(assigneeName || '').trim()
+      if (!normalizedAssignee) {
+        throw new Error('请先选择复审人。')
+      }
+
+      const selectedIds = Array.isArray(taskIds) ? taskIds.filter(Boolean) : []
+      if (!selectedIds.length) {
+        throw new Error('请至少选择一条重审任务。')
+      }
+
+      const tasks = this.rereviewTasks.filter((item) => selectedIds.includes(item.id))
+      if (!tasks.length) {
+        throw new Error('未找到可操作的重审任务。')
+      }
+
+      const now = new Date().toISOString()
+
+      return tasks.map((task) => {
+        task.reviewerName = normalizedAssignee
+        task.assignedAt = now
+        task.updatedAt = now
+        task.timeline.unshift({
+          id: createId('rrlog'),
+          action: '指派复审人',
+          actor: operatorName,
+          at: now,
+          note: `已指派给 ${normalizedAssignee}${startReview ? '，并进入复审。' : '。'}`,
+        })
+
+        if (startReview && task.status === 'pending') {
+          return this.processRereviewTask({
+            taskId: task.id,
+            reviewerName: normalizedAssignee,
+            nextStatus: 'in_progress',
+            comment: comment || `已指派给 ${normalizedAssignee}，开始复审。`,
+          })
+        }
+
+        return task
+      })
+    },
+    processRereviewTask({
+      taskId,
+      reviewerName,
+      nextStatus,
+      comment = '',
+      resultingRecordStatus = '',
+      lifecycleStatus = '',
+      unmetClauses = [],
+      improvementSuggestions = [],
+    }) {
+      const task = this.rereviewTasks.find((item) => item.id === taskId)
+      if (!task) {
+        throw new Error('未找到对应重审任务。')
+      }
+
+      const now = new Date().toISOString()
+      task.status = nextStatus
+      task.reviewerName = reviewerName || task.reviewerName
+      task.comment = comment
+      task.updatedAt = now
+
+      const record = this.documents.find((item) => item.id === task.recordId)
+      const suppliersStore = useSuppliersStore()
+      const supplier = suppliersStore.currentSupplier(task.supplierId)
+      const normalizedClauses = normalizeTextList(unmetClauses)
+      const normalizedSuggestions = normalizeTextList(improvementSuggestions)
+
+      if (nextStatus === 'in_progress') {
+        task.timeline.unshift({
+          id: createId('rrlog'),
+          action: '开始复审',
+          actor: reviewerName,
+          at: now,
+          note: comment || '已开始处理该重审任务。',
+        })
+        return task
+      }
+
+      if (record && ['approved', 'rejected'].includes(nextStatus)) {
+        const finalRecordStatus =
+          resultingRecordStatus ||
+          (nextStatus === 'approved' ? 'approved' : nextStatus === 'rejected' ? 'rejected' : record.status)
+
+        record.status = finalRecordStatus
+        record.reviewerName = reviewerName
+        record.reviewedAt = now
+        record.adminOpinion = comment
+        record.unmetClauses = finalRecordStatus === 'approved' ? [] : normalizedClauses
+        record.improvementSuggestions = finalRecordStatus === 'approved' ? [] : normalizedSuggestions
+        record.appealable = finalRecordStatus === 'approved' ? false : true
+        record.appealDeadline = finalRecordStatus === 'approved' ? '' : buildAppealDeadline(now)
+
+        this.reviewLogs.unshift({
+          id: createId('log'),
+          recordId: record.id,
+          taskNo: record.taskNo,
+          supplierName: supplier?.enterprise.enterpriseName || task.supplierName,
+          fileName: record.fileName,
+          reviewer: reviewerName,
+          action:
+            finalRecordStatus === 'approved'
+              ? '重审通过'
+              : finalRecordStatus === 'conditional'
+                ? '重审有条件通过'
+                : '重审未通过',
+          result:
+            finalRecordStatus === 'approved' ? '已通过' : finalRecordStatus === 'conditional' ? '有条件通过' : '未通过',
+          score: record.scoreBreakdown?.total || record.precheckScore || 0,
+          comment,
+          reviewedAt: now,
+        })
+
+        if (finalRecordStatus === 'conditional' || finalRecordStatus === 'rejected') {
+          this.sendRiskNotification({
+            recordId: record.id,
+            operatorName: reviewerName,
+            trigger: 'rereview-auto',
+            mode: 'auto',
+          })
+        }
+      }
+
+      const finalLifecycleStatus =
+        lifecycleStatus ||
+        (nextStatus === 'approved'
+          ? 'active'
+          : nextStatus === 'rejected'
+            ? 'frozen'
+            : supplier?.lifecycle.status || 'watch')
+      task.lifecycleStatusAfter = finalLifecycleStatus
+
+      if (supplier) {
+        suppliersStore.updateLifecycleStatus(task.supplierId, {
+          status: finalLifecycleStatus,
+          reason:
+            comment ||
+            (nextStatus === 'approved'
+              ? '重审通过，供应商恢复正常状态。'
+              : nextStatus === 'rejected'
+                ? '重审未通过，维持风险限制。'
+                : '重审任务已关闭。'),
+          operatorName: reviewerName,
+          source: 'rereview-workbench',
+        })
+      }
+
+      task.timeline.unshift({
+        id: createId('rrlog'),
+        action: nextStatus === 'approved' ? '重审通过' : nextStatus === 'rejected' ? '重审未通过' : '重审关闭',
+        actor: reviewerName,
+        at: now,
+        note: comment || '已完成重审处理。',
+      })
+
+      return task
+    },
+    batchProcessRereviewTasks({
+      taskIds,
+      operatorName,
+      nextStatus,
+      comment = '',
+      resultingRecordStatus = '',
+      lifecycleStatus = '',
+      unmetClauses = [],
+      improvementSuggestions = [],
+    }) {
+      const selectedIds = Array.isArray(taskIds) ? taskIds.filter(Boolean) : []
+      if (!selectedIds.length) {
+        throw new Error('请至少选择一条重审任务。')
+      }
+
+      const tasks = this.rereviewTasks.filter((item) => selectedIds.includes(item.id))
+      if (!tasks.length) {
+        throw new Error('未找到可批量处理的重审任务。')
+      }
+
+      return tasks.map((task) =>
+        this.processRereviewTask({
+          taskId: task.id,
+          reviewerName: task.reviewerName || operatorName,
+          nextStatus,
+          comment,
+          resultingRecordStatus:
+            nextStatus === 'closed'
+              ? ''
+              : nextStatus === 'rejected'
+                ? 'rejected'
+                : resultingRecordStatus || 'approved',
+          lifecycleStatus,
+          unmetClauses,
+          improvementSuggestions,
+        }),
+      )
+    },
     getRenewalState(record) {
       return classifyRenewal(record)
     },
@@ -447,7 +828,145 @@ export const useReviewsStore = defineStore('reviews', {
       const month = new Date().toISOString().slice(0, 7).replace('-', '')
       return `WK-${month}-${String(this.documents.length + 1).padStart(4, '0')}`
     },
-    createAppealNotificationMessage(appeal, record, status, feedback = '') {
+    backfillHistoricalReviews({
+      supplierId,
+      items = [],
+      operatorName = '管理员',
+      sourceFileName = '',
+      note = '',
+      parseRuleName = '',
+      parseConfigSummary = [],
+      sourceFileMeta = null,
+      failureDetails = [],
+    }) {
+      const suppliersStore = useSuppliersStore()
+      const supplier = suppliersStore.currentSupplier(supplierId)
+      if (!supplier) {
+        throw new Error('未找到对应供应商，无法回填历史审核记录。')
+      }
+
+      if (!items.length) {
+        throw new Error('请至少提供一条历史审核记录后再回填。')
+      }
+
+      const batchNo = createHistoryBackfillBatchNo()
+      const createdRecords = []
+
+      items.forEach((item, index) => {
+        const reviewedAt = item.reviewedAt || new Date().toISOString()
+        const uploadedAt = item.uploadedAt || new Date(new Date(reviewedAt).getTime() - 24 * 60 * 60 * 1000).toISOString()
+        const scoreTotal = Number(item.scoreTotal ?? item.precheckScore ?? 88)
+        const normalizedClauses = normalizeTextList(item.unmetClauses)
+        const normalizedSuggestions = normalizeTextList(item.improvementSuggestions)
+        const status = item.status || 'approved'
+        const machineStatus = status === 'approved' ? 'pass' : status === 'conditional' ? 'warning' : 'fail'
+        const riskFlags =
+          status === 'approved'
+            ? []
+            : normalizedClauses.length
+              ? normalizedClauses.map((clause) => `历史回填：${clause}`)
+              : ['历史回填记录存在未满足项']
+
+        const record = {
+          id: createId('doc'),
+          taskNo: this.createTaskNo(),
+          supplierId,
+          fileName: item.fileName,
+          category: item.category,
+          mimeType: item.mimeType || 'application/pdf',
+          sizeMB: item.sizeMB || 1.8,
+          uploadedAt,
+          status,
+          machineStatus,
+          previewUrl: item.previewUrl || SAMPLE_PDF_DATA_URI,
+          standardTemplateId: supplier.enterprise.templateId,
+          extractedFields: {
+            enterpriseName: supplier.enterprise.enterpriseName,
+            creditCode: supplier.enterprise.creditCode,
+            legalPerson: supplier.enterprise.legalPerson,
+            validUntil: item.validUntil || '',
+            certificationScope: item.certificationScope || item.fileName || '',
+          },
+          comparisons: [
+            { field: '企业名称', expected: supplier.enterprise.enterpriseName, actual: supplier.enterprise.enterpriseName, result: '匹配' },
+            { field: '统一社会信用代码', expected: supplier.enterprise.creditCode, actual: supplier.enterprise.creditCode, result: '匹配' },
+            {
+              field: '审核结论',
+              expected: status === 'approved' ? '通过' : status === 'conditional' ? '有条件通过' : '未通过',
+              actual: status === 'approved' ? '通过' : status === 'conditional' ? '有条件通过' : '未通过',
+              result: '匹配',
+            },
+            { field: '证书有效期', expected: item.validUntil || '--', actual: item.validUntil || '--', result: '匹配' },
+          ],
+          riskFlags,
+          precheckScore: scoreTotal,
+          scoreBreakdown: item.scoreBreakdown || {
+            quality: scoreTotal,
+            technical: scoreTotal,
+            business: scoreTotal,
+            bonus: 0,
+            total: scoreTotal,
+          },
+          sameSourceMatches: [],
+          adminOpinion: item.opinion || '',
+          unmetClauses: status === 'approved' ? [] : normalizedClauses,
+          improvementSuggestions: status === 'approved' ? [] : normalizedSuggestions,
+          appealable: false,
+          appealDeadline: '',
+          reviewerName: item.reviewerName || '历史回填',
+          reviewedAt,
+          reuploadOf: '',
+          nextReviewAt: item.nextReviewAt || dateAfterYears(item.validUntil || reviewedAt, 1),
+          uploadSource: 'archive',
+          uploadedByRole: 'admin',
+          uploadedByName: operatorName,
+          isHistoricalBackfill: true,
+          historyBatchNo: batchNo,
+          historyPeriod: item.historyPeriod || item.period || `历史记录-${index + 1}`,
+        }
+
+        this.documents.unshift(record)
+
+        this.reviewLogs.unshift({
+          id: createId('log'),
+          recordId: record.id,
+          taskNo: record.taskNo,
+          supplierName: supplier.enterprise.enterpriseName,
+          fileName: record.fileName,
+          reviewer: record.reviewerName,
+          action: '历史审核记录回填',
+          result: status === 'approved' ? '已通过' : status === 'conditional' ? '有条件通过' : '未通过',
+          score: scoreTotal,
+          comment: item.opinion || note || `通过批次 ${batchNo} 回填历史审核记录`,
+          reviewedAt,
+        })
+
+        createdRecords.push(record)
+      })
+
+      const batch = suppliersStore.recordArchiveBackfillBatch({
+        supplierId,
+        operatorName,
+        sourceFileName,
+        note: note || `已回填 ${createdRecords.length} 条历史审核记录`,
+        parseRuleName,
+        parseConfigSummary,
+        sourceFileMeta,
+        failureDetails,
+        batchNo,
+        items: createdRecords.map((item) => ({
+          recordId: item.id,
+          fileName: item.fileName,
+          category: item.category,
+          status: item.status,
+        })),
+      })
+
+      return {
+        batch,
+        records: createdRecords.map((item) => this.getRecord(item.id)),
+      }
+    },    createAppealNotificationMessage(appeal, record, status, feedback = '') {
       const statusText = appealStatusLabel(status)
       const suffix = feedback ? `处理意见：${feedback}` : '请进入申诉记录页查看最新进展。'
       return `【悟空资质助手】贵司文件《${record.fileName}》的申诉状态已更新为“${statusText}”。${suffix}`
@@ -977,6 +1496,7 @@ export const useReviewsStore = defineStore('reviews', {
       }
 
       return files.map((file) => {
+        const previousRecord = reuploadOf ? this.documents.find((item) => item.id === reuploadOf) : undefined
         const result = this.buildMachineResult({
           supplier,
           category,
@@ -1020,6 +1540,23 @@ export const useReviewsStore = defineStore('reviews', {
         }
 
         this.documents.unshift(record)
+
+        if (reuploadOf) {
+          this.createRereviewTask({
+            supplierId,
+            recordId: record.id,
+            previousRecordId: reuploadOf,
+            category,
+            triggerSource: 'file-update',
+            taskType: 'change',
+            reason:
+              this.getRenewalState(previousRecord).reason ||
+              previousRecord?.adminOpinion ||
+              '供应商更新资质文件后，系统已自动触发变更重审。',
+            operatorName: operatorName || supplier.enterprise.contactName || '供应商',
+            syncLifecycle: true,
+          })
+        }
 
         if (this.getRiskProfile(record).alerts.length) {
           this.sendRiskNotification({
@@ -1134,3 +1671,4 @@ export const useReviewsStore = defineStore('reviews', {
     },
   },
 })
+

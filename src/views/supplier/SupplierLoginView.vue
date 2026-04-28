@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '../../stores/auth'
 import { useStandardsStore } from '../../stores/standards'
+import AppFooter from '../../components/AppFooter.vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -355,6 +356,7 @@ async function handleResetPassword() {
         </div>
       </template>
     </el-dialog>
+    <AppFooter />
   </div>
 </template>
 

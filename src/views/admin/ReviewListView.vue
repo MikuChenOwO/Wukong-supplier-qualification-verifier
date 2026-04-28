@@ -50,12 +50,12 @@ const tableData = computed(() =>
       const categoryMatched = !filters.category || item.category === filters.category
       const rangeMatched =
         !filters.range?.length ||
-        (new Date(item.uploadedAt) >= new Date(filters.range[0]) && new Date(item.uploadedAt) <= new Date(filters.range[1]))
+        (new Date(item.uploadedAt) >= new Date(filters.range[0]) &&
+          new Date(item.uploadedAt) <= new Date(filters.range[1]))
       return keywordMatched && statusMatched && categoryMatched && rangeMatched
     }),
 )
 
-const riskTableData = computed(() => reviewsStore.riskRecords.map(buildRow))
 const approvedCount = computed(() => reviewsStore.enrichedDocuments.filter((item) => item.status === 'approved').length)
 const pendingCount = computed(() => reviewsStore.enrichedDocuments.filter((item) => item.status === 'pending').length)
 const highRiskCount = computed(() => reviewsStore.riskRecords.filter((item) => item.riskStatus.rank >= 3).length)
@@ -74,8 +74,13 @@ function resetKeywordSearch() {
   filters.keyword = ''
 }
 
-function alertSummary(row) {
-  return row.riskAlerts.length ? row.riskAlerts.map((item) => item.label).join('、') : '无'
+function issueCount(row) {
+  const compareIssues = (row.comparisons || []).filter((item) => item.result !== '匹配').length
+  return (row.riskAlerts?.length || 0) + (row.sameSourceMatches?.length || 0) + compareIssues
+}
+
+function hasVeto(row) {
+  return (row.riskFlags || []).some((item) => String(item).includes('一票否决'))
 }
 
 function sendNotification(row) {
@@ -98,7 +103,7 @@ function sendNotification(row) {
     <div class="page-title">
       <div>
         <h1>审核列表</h1>
-        <p>统一查看供应商文件、细化风险状态、短信通知状态，并支持管理员一键提醒供应商处理告警。</p>
+        <p>统一查看文件审核、风险告警和通知状态，并可直接进入审核工作台处理疑点。</p>
       </div>
     </div>
 
@@ -107,44 +112,6 @@ function sendNotification(row) {
       <StatCard label="已通过" :value="approvedCount" hint="已归档并锁定的审核结果" tone="success" />
       <StatCard label="高风险文件" :value="highRiskCount" hint="紧急处理与高风险待处理文件" tone="danger" />
       <StatCard label="已发通知" :value="notifiedCount" hint="已自动或人工发送短信提醒的文件" />
-    </div>
-
-    <div class="section-card table-card">
-      <div class="panel-title">
-        <div>
-          <h3>风险与通知看板</h3>
-          <p>优先关注高风险、临期、过期、退回补传和主体不一致的文件，支持一键发送短信。</p>
-        </div>
-      </div>
-      <el-table :data="riskTableData" class="app-table" stripe>
-        <el-table-column prop="supplierName" label="供应商名称" min-width="220" />
-        <el-table-column prop="fileName" label="文件名称" min-width="220" />
-        <el-table-column label="风险状态" min-width="140">
-          <template #default="{ row }">
-            <RiskStatusTag :status="row.riskStatus" />
-          </template>
-        </el-table-column>
-        <el-table-column label="告警类别" min-width="240">
-          <template #default="{ row }">{{ alertSummary(row) }}</template>
-        </el-table-column>
-        <el-table-column label="通知状态" min-width="130">
-          <template #default="{ row }">
-            <el-tag :type="row.notificationState.type">{{ row.notificationState.label }}</el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="最近通知时间" min-width="170">
-          <template #default="{ row }">{{ formatDateTime(row.notificationState.lastSentAt) }}</template>
-        </el-table-column>
-        <el-table-column label="操作" min-width="190" fixed="right">
-          <template #default="{ row }">
-            <div class="toolbar">
-              <el-button text type="primary" @click="openDetail(row)">查看详情</el-button>
-              <el-button text type="danger" @click="sendNotification(row)">发送短信</el-button>
-            </div>
-          </template>
-        </el-table-column>
-      </el-table>
-      <div v-if="!riskTableData.length" class="rich-empty">当前没有需要提醒的风险文件。</div>
     </div>
 
     <div class="section-card table-card">
@@ -194,7 +161,7 @@ function sendNotification(row) {
         <el-table-column label="上传时间" min-width="160">
           <template #default="{ row }">{{ formatDateTime(row.uploadedAt) }}</template>
         </el-table-column>
-        <el-table-column label="机器核验" min-width="150">
+        <el-table-column label="机器预审" min-width="150">
           <template #default="{ row }">
             <MachineBadge :status="row.machineStatus" :score="row.precheckScore" />
           </template>
@@ -209,6 +176,14 @@ function sendNotification(row) {
             <RiskStatusTag :status="row.riskStatus" />
           </template>
         </el-table-column>
+        <el-table-column label="疑点概览" min-width="180">
+          <template #default="{ row }">
+            <div class="capsule-list">
+              <span class="capsule-item">疑点 {{ issueCount(row) }}</span>
+              <el-tag v-if="hasVeto(row)" type="danger">一票否决</el-tag>
+            </div>
+          </template>
+        </el-table-column>
         <el-table-column label="上传来源" min-width="120">
           <template #default="{ row }">
             <el-tag :type="row.uploadSource === 'admin' ? 'warning' : 'info'">
@@ -220,7 +195,7 @@ function sendNotification(row) {
           <template #default="{ row }">
             <div class="toolbar">
               <el-button text type="primary" @click="openDetail(row)">查看详情</el-button>
-              <el-button text type="primary" @click="openDetail(row)">进入审核</el-button>
+              <el-button text type="primary" @click="openDetail(row)">进入工作台</el-button>
               <el-button
                 v-if="row.riskStatus.code !== 'normal'"
                 text

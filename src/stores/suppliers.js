@@ -2,6 +2,8 @@ import { defineStore } from 'pinia'
 import { MOCK_SUPPLIERS } from '../constants/mockData'
 import { useStandardsStore } from './standards'
 
+const FORM_DRAFT_STORAGE_KEY = 'wukong-supplier-form-drafts'
+
 function clone(value) {
   return JSON.parse(JSON.stringify(value))
 }
@@ -38,15 +40,45 @@ function appendLifecycleLog(supplier, payload) {
   })
 }
 
+function readPersistedDrafts() {
+  if (typeof window === 'undefined') return {}
+
+  try {
+    const raw = window.localStorage.getItem(FORM_DRAFT_STORAGE_KEY)
+    return raw ? JSON.parse(raw) : {}
+  } catch {
+    return {}
+  }
+}
+
+function persistDrafts(formDrafts) {
+  if (typeof window === 'undefined') return
+
+  try {
+    window.localStorage.setItem(FORM_DRAFT_STORAGE_KEY, JSON.stringify(formDrafts))
+  } catch {
+    // Ignore persistence failures; in-memory drafts still work.
+  }
+}
+
 export const useSuppliersStore = defineStore('suppliers', {
   state: () => ({
     suppliers: clone(MOCK_SUPPLIERS).map(normalizeSupplier),
     importBatches: [],
+    archiveBackfillBatches: [],
+    formDrafts: readPersistedDrafts(),
   }),
   getters: {
     currentSupplier: (state) => (supplierId) => state.suppliers.find((item) => item.id === supplierId),
     supplierMap: (state) => Object.fromEntries(state.suppliers.map((item) => [item.id, item])),
     recentImportBatches: (state) => state.importBatches.slice().sort((a, b) => new Date(b.importedAt) - new Date(a.importedAt)),
+    recentArchiveBackfillBatches: (state) =>
+      state.archiveBackfillBatches.slice().sort((a, b) => new Date(b.backfilledAt) - new Date(a.backfilledAt)),
+    archiveBackfillBatchesBySupplier: (state) => (supplierId) =>
+      state.archiveBackfillBatches
+        .filter((item) => item.supplierId === supplierId)
+        .slice()
+        .sort((a, b) => new Date(b.backfilledAt) - new Date(a.backfilledAt)),
   },
   actions: {
     registerSupplier(form) {
@@ -85,6 +117,7 @@ export const useSuppliersStore = defineStore('suppliers', {
           lifecycleLogs: [],
         },
       }
+
       const normalizedSupplier = normalizeSupplier(supplier)
       this.suppliers.unshift(normalizedSupplier)
       return normalizedSupplier
@@ -112,9 +145,16 @@ export const useSuppliersStore = defineStore('suppliers', {
         archiveSource: 'admin-created',
       })
     },
-    importSuppliersByAdmin({ items = [], operatorName = '管理员', note = '建立存量供应商电子档案' }) {
+    importSuppliersByAdmin({
+      items = [],
+      operatorName = '管理员',
+      note = '建立存量供应商电子档案',
+      sourceFileName = '',
+      mappingSummary = [],
+      failureDetails = [],
+    }) {
       if (!items.length) {
-        throw new Error('请至少选择一条存量供应商后再导入。')
+        throw new Error('请至少选择一条可导入的存量供应商数据后再导入。')
       }
 
       const batchNo = createBatchNo()
@@ -124,9 +164,11 @@ export const useSuppliersStore = defineStore('suppliers', {
       items.forEach((item, index) => {
         if (this.suppliers.some((supplier) => supplier.enterprise.creditCode === item.creditCode)) {
           skippedSuppliers.push({
+            rowNo: item.rowNo || index + 1,
             enterpriseName: item.enterpriseName,
             creditCode: item.creditCode,
             reason: '统一社会信用代码已存在',
+            field: 'creditCode',
           })
           return
         }
@@ -136,9 +178,11 @@ export const useSuppliersStore = defineStore('suppliers', {
 
         if (this.existsAccount(account)) {
           skippedSuppliers.push({
+            rowNo: item.rowNo || index + 1,
             enterpriseName: item.enterpriseName,
             creditCode: item.creditCode,
             reason: '登录账号已存在',
+            field: 'account',
           })
           return
         }
@@ -179,17 +223,41 @@ export const useSuppliersStore = defineStore('suppliers', {
         importedSuppliers.push(supplier)
       })
 
+      const normalizedFailures = [
+        ...failureDetails.map((item, index) => ({
+          id: item.id || `imp-fail-${Date.now()}-${index}`,
+          rowNo: item.rowNo || index + 1,
+          enterpriseName: item.enterpriseName || item.rowSnapshot?.enterpriseName || '--',
+          creditCode: item.creditCode || item.rowSnapshot?.creditCode || '--',
+          reason: item.reason || '字段校验未通过',
+          field: item.field || '',
+        })),
+        ...skippedSuppliers.map((item, index) => ({
+          id: `imp-skip-${Date.now()}-${index}`,
+          rowNo: item.rowNo || '',
+          enterpriseName: item.enterpriseName,
+          creditCode: item.creditCode,
+          reason: item.reason,
+          field: item.field || '',
+        })),
+      ]
+
       const batch = {
         id: `imp-${Date.now()}`,
         batchNo,
         importedAt: new Date().toISOString(),
         operatorName,
-        total: items.length,
+        total: items.length + failureDetails.length,
         successCount: importedSuppliers.length,
         skippedCount: skippedSuppliers.length,
+        failureCount: normalizedFailures.length,
         note,
+        sourceFileName,
+        mappingSummary: clone(mappingSummary),
+        mappedFieldCount: mappingSummary.filter((item) => item.source).length,
         supplierNames: importedSuppliers.map((item) => item.enterprise.enterpriseName),
         skippedSuppliers,
+        failureDetails: normalizedFailures,
       }
 
       this.importBatches.unshift(batch)
@@ -197,7 +265,120 @@ export const useSuppliersStore = defineStore('suppliers', {
         batch,
         importedSuppliers,
         skippedSuppliers,
+        failureDetails: normalizedFailures,
       }
+    },
+    recordArchiveBackfillBatch({
+      supplierId,
+      operatorName = '管理员',
+      sourceFileName = '',
+      note = '',
+      parseRuleName = '',
+      parseConfigSummary = [],
+      sourceFileMeta = null,
+      failureDetails = [],
+      items = [],
+      batchNo = createBatchNo('BATCH-HIS'),
+    }) {
+      const supplier = this.currentSupplier(supplierId)
+      if (!supplier) {
+        throw new Error('未找到对应供应商，无法记录历史回填批次。')
+      }
+
+      if (!items.length) {
+        throw new Error('缺少回填记录，无法生成历史批次。')
+      }
+
+      const batch = {
+        id: `hist-${Date.now()}`,
+        supplierId,
+        supplierName: supplier.enterprise.enterpriseName,
+        batchNo,
+        backfilledAt: new Date().toISOString(),
+        operatorName,
+        sourceFileName,
+        note,
+        parseRuleName,
+        parseConfigSummary: clone(parseConfigSummary),
+        sourceFileMeta: sourceFileMeta ? clone(sourceFileMeta) : null,
+        total: items.length,
+        failureCount: failureDetails.length,
+        approvedCount: items.filter((item) => item.status === 'approved').length,
+        conditionalCount: items.filter((item) => item.status === 'conditional').length,
+        rejectedCount: items.filter((item) => item.status === 'rejected').length,
+        categories: Array.from(new Set(items.map((item) => item.category).filter(Boolean))),
+        recordIds: items.map((item) => item.recordId).filter(Boolean),
+        recordNames: items.map((item) => item.fileName).filter(Boolean),
+        failureDetails: clone(failureDetails),
+      }
+
+      this.archiveBackfillBatches.unshift(batch)
+
+      appendLifecycleLog(supplier, {
+        actor: operatorName,
+        action: '回填历史审核记录',
+        note: note || `已通过批次 ${batchNo} 回填 ${items.length} 条历史审核记录，补全存量供应商电子档案。`,
+        source: 'archive-backfill',
+      })
+
+      return batch
+    },
+    lookupEnterpriseByCreditCode(creditCode) {
+      const normalizedCode = String(creditCode || '').trim().toUpperCase()
+      const standardsStore = useStandardsStore()
+      const registry = standardsStore.findRegistryEntry(normalizedCode)
+
+      if (!registry) {
+        return {
+          matched: false,
+          message: '工商 Mock 数据库中未找到该统一社会信用代码，请管理员人工核验。',
+        }
+      }
+
+      const supplier = this.suppliers.find((item) => item.enterprise.creditCode === normalizedCode)
+      const enterprise = supplier?.enterprise || {}
+
+      return {
+        matched: true,
+        registry,
+        autofill: {
+          enterpriseName: registry.enterpriseName,
+          creditCode: normalizedCode,
+          legalPerson: registry.legalPerson,
+          registerAddress: registry.registerAddress,
+          foundedAt: enterprise.foundedAt || '',
+          registeredCapital: enterprise.registeredCapital || '',
+          businessScope: enterprise.businessScope || '',
+          productionAddress: enterprise.productionAddress || '',
+        },
+        message: `已查询到工商 Mock 信息：${registry.enterpriseName}，${registry.status}。`,
+      }
+    },
+    saveFormDraft(supplierId, section, payload) {
+      if (!supplierId || !section) {
+        throw new Error('缺少草稿保存标识。')
+      }
+
+      this.formDrafts[supplierId] = this.formDrafts[supplierId] || {}
+      this.formDrafts[supplierId][section] = {
+        payload: clone(payload),
+        savedAt: new Date().toISOString(),
+        persisted: true,
+      }
+      persistDrafts(this.formDrafts)
+      return this.formDrafts[supplierId][section]
+    },
+    getFormDraft(supplierId, section) {
+      return this.formDrafts[supplierId]?.[section]
+    },
+    clearFormDraft(supplierId, section) {
+      if (!this.formDrafts[supplierId]?.[section]) return
+
+      delete this.formDrafts[supplierId][section]
+      if (!Object.keys(this.formDrafts[supplierId]).length) {
+        delete this.formDrafts[supplierId]
+      }
+      persistDrafts(this.formDrafts)
     },
     updateEnterprise(supplierId, payload) {
       const supplier = this.currentSupplier(supplierId)
@@ -278,15 +459,9 @@ export const useSuppliersStore = defineStore('suppliers', {
       }
 
       const mismatches = []
-      if (enterprise?.enterpriseName && registry.enterpriseName !== enterprise.enterpriseName) {
-        mismatches.push('企业名称')
-      }
-      if (enterprise?.legalPerson && registry.legalPerson !== enterprise.legalPerson) {
-        mismatches.push('法人')
-      }
-      if (enterprise?.registerAddress && registry.registerAddress !== enterprise.registerAddress) {
-        mismatches.push('注册地址')
-      }
+      if (enterprise?.enterpriseName && registry.enterpriseName !== enterprise.enterpriseName) mismatches.push('企业名称')
+      if (enterprise?.legalPerson && registry.legalPerson !== enterprise.legalPerson) mismatches.push('法人')
+      if (enterprise?.registerAddress && registry.registerAddress !== enterprise.registerAddress) mismatches.push('注册地址')
 
       if (mismatches.length) {
         return {
@@ -300,7 +475,7 @@ export const useSuppliersStore = defineStore('suppliers', {
       return {
         matched: true,
         level: 'success',
-        message: `已匹配工商 Mock 数据：${registry.enterpriseName}（${registry.status}）`,
+        message: `已匹配工商 Mock 数据：${registry.enterpriseName}，${registry.status}。`,
         registry,
       }
     },

@@ -21,6 +21,7 @@ const record = computed(() => reviewsStore.getRecord(route.params.id))
 const supplier = computed(() => suppliersStore.currentSupplier(record.value?.supplierId))
 const threshold = computed(() => standardsStore.resolveThreshold(supplier.value?.enterprise))
 const latestAppeal = computed(() => reviewsStore.latestAppealByRecord(route.params.id))
+const latestRereview = computed(() => reviewsStore.latestRereviewByRecord(route.params.id))
 
 function appealStatusLabel(status) {
   return {
@@ -32,6 +33,24 @@ function appealStatusLabel(status) {
     closed: '已结案',
   }[status] || '暂无'
 }
+
+function rereviewStatusLabel(status) {
+  return {
+    pending: '待处理',
+    in_progress: '复审中',
+    approved: '重审通过',
+    rejected: '重审未通过',
+    closed: '任务关闭',
+  }[status] || '暂无'
+}
+
+function rereviewSourceLabel(source) {
+  return {
+    'risk-radar': '动态风控触发',
+    'file-update': '资料更新触发',
+    manual: '人工发起',
+  }[source] || source || '--'
+}
 </script>
 
 <template>
@@ -39,7 +58,7 @@ function appealStatusLabel(status) {
     <div class="page-title">
       <div>
         <h1>核验详情</h1>
-        <p>查看文件在线预览、识别字段、标准比对结果、同源筛查、管理员意见与最终状态。</p>
+        <p>查看文件预览、识别字段、标准比对、风险标记、申诉状态和重审进度。</p>
       </div>
       <div class="toolbar">
         <MachineBadge :status="record.machineStatus" :score="record.precheckScore" />
@@ -52,7 +71,11 @@ function appealStatusLabel(status) {
         >
           发起申诉
         </el-button>
-        <el-button v-if="record.status === 'rejected'" type="primary" @click="router.push(`/supplier/upload?reupload=${record.id}&category=${record.category}`)">
+        <el-button
+          v-if="record.status === 'rejected'"
+          type="primary"
+          @click="router.push(`/supplier/upload?reupload=${record.id}&category=${record.category}`)"
+        >
           重新上传
         </el-button>
       </div>
@@ -91,7 +114,11 @@ function appealStatusLabel(status) {
           </div>
           <div class="metric-row">
             <span>申诉状态</span>
-            <strong>{{ latestAppeal ? `${appealStatusLabel(latestAppeal.status)}｜${formatDateTime(latestAppeal.updatedAt || latestAppeal.submittedAt)}` : '尚未提交申诉' }}</strong>
+            <strong>{{ latestAppeal ? `${appealStatusLabel(latestAppeal.status)}·${formatDateTime(latestAppeal.updatedAt || latestAppeal.submittedAt)}` : '尚未提交申诉' }}</strong>
+          </div>
+          <div class="metric-row">
+            <span>重审状态</span>
+            <strong>{{ latestRereview ? `${rereviewStatusLabel(latestRereview.status)}·${formatDateTime(latestRereview.updatedAt || latestRereview.createdAt)}` : '当前无复审任务' }}</strong>
           </div>
         </div>
 
@@ -142,7 +169,7 @@ function appealStatusLabel(status) {
           </div>
         </div>
         <div v-if="record.improvementSuggestions?.length" style="margin-top: 14px">
-          <div class="section-subtitle">改进建议</div>
+          <div class="section-subtitle">整改建议</div>
           <div class="suggestion-list">
             <div v-for="item in record.improvementSuggestions" :key="item" class="suggestion-item">{{ item }}</div>
           </div>
@@ -157,6 +184,25 @@ function appealStatusLabel(status) {
           <span v-for="item in record.riskFlags" :key="item" class="capsule-item">{{ item }}</span>
         </div>
         <div v-else class="rich-empty">当前无风险标记。</div>
+      </div>
+
+      <div v-if="latestRereview" class="section-card detail-card">
+        <div class="panel-title">
+          <h3>重审跟进说明</h3>
+        </div>
+        <div class="metric-row">
+          <span>任务编号</span>
+          <strong>{{ latestRereview.taskNo }}</strong>
+        </div>
+        <div class="metric-row">
+          <span>触发来源</span>
+          <strong>{{ rereviewSourceLabel(latestRereview.triggerSource) }}</strong>
+        </div>
+        <div class="metric-row">
+          <span>当前阶段</span>
+          <strong>{{ rereviewStatusLabel(latestRereview.status) }}</strong>
+        </div>
+        <div class="suggestion-item" style="margin-top: 12px">{{ latestRereview.reason }}</div>
       </div>
 
       <div class="section-card detail-card">

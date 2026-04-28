@@ -38,6 +38,21 @@ function openDetail(row) {
 function reupload(row) {
   router.push(`/supplier/upload?reupload=${row.id}&category=${row.category}`)
 }
+
+function rereviewStatusMeta(row) {
+  const task = reviewsStore.latestRereviewByRecord(row.id)
+  if (!task) {
+    return { label: '--', type: 'info' }
+  }
+
+  return {
+    pending: { label: '待处理', type: 'warning' },
+    in_progress: { label: '复审中', type: 'primary' },
+    approved: { label: '已完成', type: 'success' },
+    rejected: { label: '未通过', type: 'danger' },
+    closed: { label: '已关闭', type: 'info' },
+  }[task.status] || { label: task.status, type: 'info' }
+}
 </script>
 
 <template>
@@ -45,7 +60,7 @@ function reupload(row) {
     <div class="page-title">
       <div>
         <h1>我的核验记录</h1>
-        <p>可查看每份资质的机器核验结果、人工审核状态、未满足条款、改进建议与重新上传入口。</p>
+        <p>查看每份资质文件的预审结果、人工审核状态、申诉入口以及复审进度。</p>
       </div>
     </div>
 
@@ -77,7 +92,7 @@ function reupload(row) {
         <el-table-column label="上传时间" min-width="160">
           <template #default="{ row }">{{ formatDateTime(row.uploadedAt) }}</template>
         </el-table-column>
-        <el-table-column label="机器核验" min-width="140">
+        <el-table-column label="机器预审" min-width="140">
           <template #default="{ row }">
             <MachineBadge :status="row.machineStatus" :score="row.precheckScore" />
           </template>
@@ -85,6 +100,11 @@ function reupload(row) {
         <el-table-column label="审核状态" min-width="120">
           <template #default="{ row }">
             <StatusTag :status="row.status" />
+          </template>
+        </el-table-column>
+        <el-table-column label="复审状态" min-width="120">
+          <template #default="{ row }">
+            <el-tag :type="rereviewStatusMeta(row).type">{{ rereviewStatusMeta(row).label }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column label="操作" min-width="220" fixed="right">

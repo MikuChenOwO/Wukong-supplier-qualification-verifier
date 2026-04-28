@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { useSuppliersStore } from '../stores/suppliers'
+import AppFooter from '../components/AppFooter.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -73,6 +74,7 @@ function logout() {
         </el-main>
       </el-container>
     </el-container>
+    <AppFooter />
   </div>
 </template>
 

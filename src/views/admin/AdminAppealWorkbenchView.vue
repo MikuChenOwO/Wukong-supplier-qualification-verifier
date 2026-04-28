@@ -20,6 +20,7 @@ const filters = reactive({
   status: '',
 })
 const selectedAppealIds = ref([])
+const focusedAppealId = ref(String(route.query.appealId || ''))
 
 const actionForm = reactive({
   nextStatus: 'under_review',
@@ -126,10 +127,28 @@ const reviewerBarMax = computed(() => Math.max(...reviewerWorkloads.value.map((i
 const reasonBarMax = computed(() => Math.max(...reasonStats.value.map((item) => item.count), 1))
 
 const focusAppeal = computed(() => {
-  const targetId = String(route.query.appealId || '')
+  const targetId = String(focusedAppealId.value || '')
   return appealRows.value.find((item) => item.id === targetId) || appealRows.value[0]
 })
 const focusRecord = computed(() => (focusAppeal.value ? reviewsStore.getRecord(focusAppeal.value.recordId) : undefined))
+
+watch(
+  appealRows,
+  (value) => {
+    if (!value.length) {
+      focusedAppealId.value = ''
+      selectedAppealIds.value = []
+      return
+    }
+
+    if (!value.some((item) => item.id === focusedAppealId.value)) {
+      focusedAppealId.value = value[0].id
+    }
+
+    selectedAppealIds.value = selectedAppealIds.value.filter((item) => value.some((row) => row.id === item))
+  },
+  { immediate: true },
+)
 
 watch(
   focusAppeal,
@@ -172,7 +191,7 @@ function documentTypeLabel(value) {
 }
 
 function openAppeal(row) {
-  router.replace({ path: '/admin/appeals', query: { appealId: row.id } })
+  focusedAppealId.value = row.id
 }
 
 function handleSelectionChange(appealId, checked) {
@@ -183,6 +202,15 @@ function handleSelectionChange(appealId, checked) {
     return
   }
   selectedAppealIds.value = selectedAppealIds.value.filter((item) => item !== appealId)
+}
+
+function toggleAppealSelection(appealId) {
+  handleSelectionChange(appealId, !selectedAppealIds.value.includes(appealId))
+}
+
+function handleAppealCardClick(row) {
+  openAppeal(row)
+  toggleAppealSelection(row.id)
 }
 
 function toggleSelectAll() {
@@ -241,7 +269,7 @@ function submitAction() {
       resultingSuggestions: actionForm.resultingSuggestions,
     })
     ElMessage.success(`申诉已更新为“${appealStatusMeta(result.status).label}”。`)
-    router.replace({ path: '/admin/appeals', query: { appealId: result.id } })
+    focusedAppealId.value = result.id
   } catch (error) {
     ElMessage.error(error.message)
   }
@@ -395,8 +423,8 @@ function submitAction() {
             :key="item.id"
             type="button"
             class="appeal-item"
-            :class="{ active: focusAppeal?.id === item.id }"
-            @click="openAppeal(item)"
+            :class="{ active: focusAppeal?.id === item.id, selected: selectedAppealIds.includes(item.id) }"
+            @click="handleAppealCardClick(item)"
           >
             <div class="appeal-item-head">
               <div class="appeal-item-head-left">
@@ -709,6 +737,11 @@ function submitAction() {
   border-color: rgba(31, 115, 216, 0.35);
   box-shadow: 0 10px 24px rgba(24, 64, 116, 0.08);
   transform: translateY(-1px);
+}
+
+.appeal-item.selected {
+  border-color: rgba(215, 134, 47, 0.42);
+  box-shadow: 0 10px 24px rgba(215, 134, 47, 0.12);
 }
 
 .appeal-item-head {

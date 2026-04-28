@@ -7,7 +7,7 @@ import { useSuppliersStore } from '../../stores/suppliers'
 import RiskStatusTag from '../../components/RiskStatusTag.vue'
 import StatusTag from '../../components/StatusTag.vue'
 import StatCard from '../../components/StatCard.vue'
-import { formatDateTime, formatDate } from '../../utils/format'
+import { formatDate, formatDateTime } from '../../utils/format'
 
 const authStore = useAuthStore()
 const reviewsStore = useReviewsStore()
@@ -25,6 +25,12 @@ const criticalCount = computed(() => riskRecords.value.filter((item) => item.ris
 const notifiedCount = computed(() => riskRecords.value.filter((item) => item.notificationState.count > 0).length)
 const appealableCount = computed(() => resultRecords.value.filter((item) => item.appealable).length)
 const submittedAppealCount = computed(() => reviewsStore.appealsBySupplier(authStore.userId).length)
+const activeRereviewTasks = computed(() =>
+  reviewsStore
+    .rereviewTasksBySupplier(authStore.userId)
+    .filter((item) => item.status === 'pending' || item.status === 'in_progress'),
+)
+const activeRereviewCount = computed(() => activeRereviewTasks.value.length)
 const latestApproved = computed(() => reviewsStore.latestApprovedRecordBySupplier(authStore.userId))
 const nextReviewAt = computed(() => latestApproved.value?.nextReviewAt || '')
 const currentTemplate = computed(() => standardsStore.findTemplateById(supplier.value?.enterprise.templateId))
@@ -37,15 +43,16 @@ const latestResultRecords = computed(() => resultRecords.value.slice(0, 3))
     <div class="page-title">
       <div>
         <h1>供应商总览</h1>
-        <p>这里集中展示企业档案、当前审核模板和更细化的文件告警状态，帮助供应商快速定位需要优先处理的风险文件。</p>
+        <p>集中查看企业档案、审核结果、风险告警和复审进度，方便快速判断当前最需要处理的事项。</p>
       </div>
     </div>
 
     <div class="stat-grid">
       <StatCard label="累计资质文件" :value="records.length" hint="当前企业全部上传记录" />
-      <StatCard label="审核通过" :value="approvedCount" hint="通过后自动锁定并保留历史" tone="success" />
+      <StatCard label="审核通过" :value="approvedCount" hint="已通过并归档的文件数量" tone="success" />
       <StatCard label="审核中" :value="pendingCount" hint="等待管理员处理的文件数量" />
       <StatCard label="紧急告警" :value="criticalCount" hint="已过期或触发关键风险的文件" tone="danger" />
+      <StatCard label="复审处理中" :value="activeRereviewCount" hint="因风控或资料更新进入复审流转的任务" />
     </div>
 
     <div class="content-grid two-col">
@@ -90,7 +97,7 @@ const latestResultRecords = computed(() => resultRecords.value.slice(0, 3))
       <div class="section-card overview-panel">
         <div class="panel-title">
           <h3>告警状态分层</h3>
-          <el-tag :type="notifiedCount ? 'warning' : 'success'">{{ notifiedCount ? '已提醒' : '未触发短信' }}</el-tag>
+          <el-tag :type="notifiedCount ? 'warning' : 'success'">{{ notifiedCount ? '已触发通知' : '暂无短信提醒' }}</el-tag>
         </div>
         <div v-if="latestRiskRecords.length" class="risk-list">
           <div v-for="item in latestRiskRecords" :key="item.id" class="risk-item">
@@ -149,6 +156,29 @@ const latestResultRecords = computed(() => resultRecords.value.slice(0, 3))
           </div>
         </div>
         <div v-else class="rich-empty">当前暂无需要重点跟进的审核结果。</div>
+      </div>
+
+      <div class="section-card overview-panel">
+        <div class="panel-title">
+          <h3>复审与变更跟进</h3>
+          <el-tag :type="activeRereviewCount ? 'warning' : 'success'">{{ activeRereviewCount ? '处理中' : '暂无任务' }}</el-tag>
+        </div>
+        <div v-if="activeRereviewTasks.length" class="result-preview-list">
+          <div v-for="item in activeRereviewTasks.slice(0, 3)" :key="item.id" class="result-preview-item">
+            <div class="result-preview-head">
+              <strong>{{ item.fileName || item.taskNo }}</strong>
+              <el-tag :type="item.status === 'pending' ? 'warning' : 'primary'">
+                {{ item.status === 'pending' ? '待处理' : '复审中' }}
+              </el-tag>
+            </div>
+            <p>{{ item.reason }}</p>
+            <div class="toolbar">
+              <span class="status-text">最近更新：{{ formatDateTime(item.updatedAt || item.createdAt) }}</span>
+              <el-button text type="primary" @click="$router.push(`/supplier/records/${item.recordId}`)">查看关联文件</el-button>
+            </div>
+          </div>
+        </div>
+        <div v-else class="rich-empty">当前暂无正在流转的复审任务。</div>
       </div>
 
       <div class="section-card overview-panel">
