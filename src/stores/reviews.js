@@ -264,9 +264,83 @@ function includesAny(list, keywords) {
   return list.some((item) => keywords.some((keyword) => String(item).includes(keyword)))
 }
 
+function externalCheckStatusMeta(status) {
+  return {
+    exception: { label: '接口异常待人工确认', type: 'danger' },
+    'manual-reviewed': { label: '已人工复核', type: 'success' },
+    'auto-passed': { label: '自动核验完成', type: 'success' },
+  }[status] || { label: '待确认', type: 'warning' }
+}
+
+function externalDecisionMeta(decision) {
+  return {
+    confirmed: { label: '人工确认通过', type: 'success' },
+    'risk-retained': { label: '保留风险结论', type: 'warning' },
+    resubmit: { label: '要求补件后重审', type: 'danger' },
+  }[decision] || { label: '待处理', type: 'info' }
+}
+
+function normalizeExternalChecks(record) {
+  return (record?.externalChecks || []).map((item, index) => {
+    const normalized = {
+      id: item.id || `${record?.id || 'record'}-ext-${index + 1}`,
+      serviceCode: item.serviceCode || 'external-service',
+      serviceName: item.serviceName || '外部核验服务',
+      checkItem: item.checkItem || '外部核验事项',
+      materialName: item.materialName || record?.fileName || '--',
+      affectedFields: Array.isArray(item.affectedFields) ? item.affectedFields.filter(Boolean) : [],
+      affectedMaterials:
+        Array.isArray(item.affectedMaterials) && item.affectedMaterials.length
+          ? item.affectedMaterials.filter(Boolean)
+          : [item.materialName || record?.fileName || '--'],
+      status: item.status || 'exception',
+      exceptionType: item.exceptionType || 'service-unavailable',
+      message: item.message || '外部接口暂未返回核验结果，需要人工复核。',
+      fallbackSuggestion: item.fallbackSuggestion || '请结合原始材料、标准比对和供应商文件进行人工判断。',
+      manualDecision: item.manualDecision || '',
+      manualNote: item.manualNote || '',
+      handledAt: item.handledAt || '',
+      handledBy: item.handledBy || '',
+    }
+
+    return {
+      ...normalized,
+      statusMeta: externalCheckStatusMeta(normalized.status),
+      decisionMeta: externalDecisionMeta(normalized.manualDecision),
+      pendingManual: normalized.status === 'exception' && !normalized.manualDecision,
+    }
+  })
+}
+
+function buildExternalCheckSummary(externalChecks) {
+  return {
+    total: externalChecks.length,
+    pending: externalChecks.filter((item) => item.pendingManual).length,
+    completed: externalChecks.filter((item) => Boolean(item.manualDecision)).length,
+  }
+}
+
+function buildManualReviewBrief(externalChecks) {
+  return externalChecks.map((item) => ({
+    id: item.id,
+    serviceName: item.serviceName,
+    checkItem: item.checkItem,
+    pendingManual: item.pendingManual,
+    resultLabel: item.pendingManual ? '待人工确认' : externalDecisionMeta(item.manualDecision).label,
+    note:
+      item.manualNote ||
+      item.message ||
+      '外部接口异常未完成自动核验，请结合原始材料继续人工确认。',
+    handledAt: item.handledAt || '',
+    handledBy: item.handledBy || '',
+  }))
+}
+
 function buildRiskAlerts(record, renewalState = classifyRenewal(record)) {
   const alerts = []
   const riskFlags = record?.riskFlags || []
+  const externalChecks = record?.externalChecks || []
+  const externalSummary = record?.externalCheckSummary || buildExternalCheckSummary(normalizeExternalChecks(record))
 
   if (renewalState.level === 'expired') {
     alerts.push({
@@ -340,7 +414,16 @@ function buildRiskAlerts(record, renewalState = classifyRenewal(record)) {
     })
   }
 
-  if (record?.status === 'pending' && record?.machineStatus === 'warning') {
+  if (externalSummary.pending) {
+    alerts.push({
+      code: 'external-exception',
+      label: '外部调用异常',
+      severity: externalSummary.pending > 1 ? 'high' : 'medium',
+      description: `共有 ${externalSummary.pending} 项外部核验未正常返回结果，需采购/审核员人工确认。`,
+    })
+  }
+
+  if (record?.status === 'pending' && (record?.machineStatus === 'warning' || externalChecks.length)) {
     alerts.push({
       code: 'manual-review',
       label: '待人工复核',
@@ -416,14 +499,22 @@ function resolveNotificationState(record, notificationLogs) {
 
 function enrichRecord(record, notificationLogs) {
   const renewalState = classifyRenewal(record)
-  const riskAlerts = buildRiskAlerts(record, renewalState)
+  const externalChecks = normalizeExternalChecks(record)
+  const externalCheckSummary = buildExternalCheckSummary(externalChecks)
+  const machineStatus =
+    record.machineStatus === 'fail' ? 'fail' : externalCheckSummary.pending ? 'exception' : record.machineStatus
+  const riskAlerts = buildRiskAlerts({ ...record, machineStatus, externalChecks, externalCheckSummary }, renewalState)
   const riskStatus = resolveRiskStatus(riskAlerts)
 
   return {
     ...record,
+    machineStatus,
     renewalState,
     riskAlerts,
     riskStatus,
+    externalChecks,
+    externalCheckSummary,
+    manualReviewBrief: buildManualReviewBrief(externalChecks),
     notificationState: resolveNotificationState(record, notificationLogs),
     uploadSource: record.uploadSource || 'supplier',
     uploadedByRole: record.uploadedByRole || (record.uploadSource === 'admin' ? 'admin' : 'supplier'),
@@ -1367,12 +1458,58 @@ export const useReviewsStore = defineStore('reviews', {
       })
 
       const riskFlags = []
+      const externalChecks = []
       if (isExpired) riskFlags.push('证书已过期')
       if (closeToExpire) riskFlags.push('证书接近到期')
       if (isMismatch) riskFlags.push('企业名称与供应商主数据不一致')
       if (needsConfirm) riskFlags.push('认证范围需要人工确认')
       if (lacksTech && supplier.enterprise.supplierType === 'raw') {
         riskFlags.push('触发一票否决：技术能力不满足')
+      }
+
+      if (lowerFileName.includes('ocr异常')) {
+        externalChecks.push({
+          id: createId('ext'),
+          serviceCode: 'ocr-engine',
+          serviceName: 'OCR 识别服务',
+          checkItem: '材料字段识别',
+          materialName: fileName,
+          affectedFields: ['认证范围', '证书有效期'],
+          status: 'exception',
+          exceptionType: 'timeout',
+          message: 'OCR 识别服务调用超时，未返回完整字段。',
+          fallbackSuggestion: '请人工核对证书中的认证范围、有效期及关键字段。',
+        })
+      }
+
+      if (lowerFileName.includes('工商异常')) {
+        externalChecks.push({
+          id: createId('ext'),
+          serviceCode: 'business-registry',
+          serviceName: '工商信息核验接口',
+          checkItem: '主体工商比对',
+          materialName: fileName,
+          affectedFields: ['企业名称', '统一社会信用代码', '法人'],
+          status: 'exception',
+          exceptionType: 'service-unavailable',
+          message: '工商信息接口暂时不可用，未返回主体比对结果。',
+          fallbackSuggestion: '请人工核对营业执照、企业信息页和主数据是否一致。',
+        })
+      }
+
+      if (lowerFileName.includes('验真异常') || lowerFileName.includes('核验异常')) {
+        externalChecks.push({
+          id: createId('ext'),
+          serviceCode: 'certificate-platform',
+          serviceName: '证书验真平台',
+          checkItem: '证书真伪核验',
+          materialName: fileName,
+          affectedFields: ['证书编号', '有效期'],
+          status: 'exception',
+          exceptionType: 'no-response',
+          message: '证书验真平台暂未返回核验结果。',
+          fallbackSuggestion: '请结合供应商原件、证书编号和有效期先行人工判断。',
+        })
       }
 
       const mismatchCount = comparisons.filter((item) => item.result === '不匹配').length
@@ -1404,6 +1541,7 @@ export const useReviewsStore = defineStore('reviews', {
         },
         comparisons,
         riskFlags,
+        externalChecks,
         precheckScore: total,
         scoreBreakdown: {
           quality: baseQuality,
@@ -1522,6 +1660,7 @@ export const useReviewsStore = defineStore('reviews', {
           extractedFields: result.extractedFields,
           comparisons: result.comparisons,
           riskFlags: result.riskFlags,
+          externalChecks: result.externalChecks,
           precheckScore: result.precheckScore,
           scoreBreakdown: result.scoreBreakdown,
           sameSourceMatches: result.sameSourceMatches,
@@ -1580,6 +1719,7 @@ export const useReviewsStore = defineStore('reviews', {
       improvementSuggestions = [],
       appealable = false,
       appealDeadline = '',
+      externalChecks = [],
     }) {
       const record = this.documents.find((item) => item.id === recordId)
       if (!record) {
@@ -1596,9 +1736,15 @@ export const useReviewsStore = defineStore('reviews', {
 
       const normalizedClauses = normalizeTextList(unmetClauses)
       const normalizedSuggestions = normalizeTextList(improvementSuggestions)
+      const normalizedExternalChecks = normalizeExternalChecks({ ...record, externalChecks })
+      const unresolvedExternalChecks = normalizedExternalChecks.filter((item) => item.pendingManual)
 
       if ((status === 'rejected' || status === 'conditional') && !normalizedClauses.length) {
         throw new Error('请至少填写一条未满足条款。')
+      }
+
+      if (status !== 'pending' && unresolvedExternalChecks.length) {
+        throw new Error('请先完成外部接口异常项的人工复核结论。')
       }
 
       const suppliersStore = useSuppliersStore()
@@ -1616,6 +1762,23 @@ export const useReviewsStore = defineStore('reviews', {
       record.reviewedAt = new Date().toISOString()
       record.adminOpinion = opinion
       record.scoreBreakdown = { ...scoreBreakdown }
+      record.externalChecks = normalizedExternalChecks.map((item) => ({
+        id: item.id,
+        serviceCode: item.serviceCode,
+        serviceName: item.serviceName,
+        checkItem: item.checkItem,
+        materialName: item.materialName,
+        affectedFields: item.affectedFields,
+        affectedMaterials: item.affectedMaterials,
+        status: item.manualDecision ? 'manual-reviewed' : item.status,
+        exceptionType: item.exceptionType,
+        message: item.message,
+        fallbackSuggestion: item.fallbackSuggestion,
+        manualDecision: item.manualDecision,
+        manualNote: item.manualNote,
+        handledAt: item.manualDecision ? item.handledAt || record.reviewedAt : '',
+        handledBy: item.manualDecision ? item.handledBy || reviewerName : '',
+      }))
       record.unmetClauses = status === 'conditional' || status === 'rejected' ? normalizedClauses : []
       record.improvementSuggestions =
         status === 'conditional' || status === 'rejected' ? normalizedSuggestions : []

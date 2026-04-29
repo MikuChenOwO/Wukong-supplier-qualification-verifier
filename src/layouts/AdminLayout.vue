@@ -21,6 +21,7 @@ const menus = [
   { index: '/admin/risk-radar', label: '动态风控', icon: 'Monitor' },
   { index: '/admin/suppliers', label: '供应商管理', icon: 'UserFilled' },
   { index: '/admin/standards', label: '标准管理', icon: 'Files' },
+  { index: '/admin/permissions', label: '权限与接口', icon: 'Setting' },
   { index: '/admin/logs', label: '审核日志', icon: 'Histogram' },
 ]
 
@@ -41,7 +42,7 @@ function logout() {
         <div class="brand-block">
           <span class="brand-mark admin">悟空审核台</span>
           <h2>管理员审核端</h2>
-          <p>统一处理审核、申诉、复审、风控和供应商档案。</p>
+          <p>统一处理审核、申诉、复审、风控、供应商档案和系统配置。</p>
         </div>
         <el-menu
           :default-active="route.path"
@@ -59,7 +60,7 @@ function logout() {
           <strong>{{ pendingCount }} 份待审核文件</strong>
           <div class="status-text">{{ appealCount }} 条申诉待处理</div>
           <div class="status-text">{{ rereviewCount }} 条复审任务待跟进</div>
-          <div class="status-text">审核动作仅更新结论与意见，不改原始资料。</div>
+          <div class="status-text">审核动作仅更新结论与意见，不修改供应商原始资料。</div>
         </div>
       </el-aside>
       <el-container>

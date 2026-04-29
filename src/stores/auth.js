@@ -9,6 +9,8 @@ export const useAuthStore = defineStore('auth', {
     role: '',
     userId: '',
     displayName: '',
+    adminRole: '',
+    permissionCodes: [],
   }),
   getters: {
     isLoggedIn: (state) => Boolean(state.userId && state.role),
@@ -28,6 +30,8 @@ export const useAuthStore = defineStore('auth', {
       this.role = 'supplier'
       this.userId = supplier.id
       this.displayName = supplier.enterprise.enterpriseName
+      this.adminRole = ''
+      this.permissionCodes = []
       return supplier
     },
     loginAdmin(account, password) {
@@ -39,6 +43,8 @@ export const useAuthStore = defineStore('auth', {
       this.role = 'admin'
       this.userId = admin.id
       this.displayName = admin.name
+      this.adminRole = admin.role || ''
+      this.permissionCodes = [...(admin.permissions || [])]
       return admin
     },
     registerAndLogin(form) {
@@ -51,12 +57,16 @@ export const useAuthStore = defineStore('auth', {
       this.role = 'supplier'
       this.userId = supplier.id
       this.displayName = supplier.enterprise.enterpriseName
+      this.adminRole = ''
+      this.permissionCodes = []
       return supplier
     },
     logout() {
       this.role = ''
       this.userId = ''
       this.displayName = ''
+      this.adminRole = ''
+      this.permissionCodes = []
     },
     resetSupplierPasswordByPhone(phone, code, newPassword) {
       if (code !== '888888') {

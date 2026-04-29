@@ -10,6 +10,7 @@ import {
   Monitor,
   OfficeBuilding,
   Reading,
+  Setting,
   Tickets,
   UploadFilled,
   UserFilled,
@@ -31,6 +32,7 @@ app.component('Histogram', Histogram)
 app.component('Monitor', Monitor)
 app.component('OfficeBuilding', OfficeBuilding)
 app.component('Reading', Reading)
+app.component('Setting', Setting)
 app.component('Tickets', Tickets)
 app.component('UploadFilled', UploadFilled)
 app.component('UserFilled', UserFilled)

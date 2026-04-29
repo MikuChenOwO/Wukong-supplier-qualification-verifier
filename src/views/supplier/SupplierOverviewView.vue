@@ -36,6 +36,22 @@ const nextReviewAt = computed(() => latestApproved.value?.nextReviewAt || '')
 const currentTemplate = computed(() => standardsStore.findTemplateById(supplier.value?.enterprise.templateId))
 const latestRiskRecords = computed(() => riskRecords.value.slice(0, 4))
 const latestResultRecords = computed(() => resultRecords.value.slice(0, 3))
+const knowledgeHighlights = computed(() => [
+  ...standardsStore.knowledgeBase.slice(0, 2).map((item) => ({
+    id: item.id,
+    kind: 'FAQ',
+    accent: item.category,
+    title: item.title,
+    summary: item.summary,
+  })),
+  ...standardsStore.caseLibrary.slice(0, 2).map((item) => ({
+    id: item.id,
+    kind: '案例',
+    accent: item.caseCategory,
+    title: item.title,
+    summary: item.takeaway,
+  })),
+])
 </script>
 
 <template>
@@ -203,8 +219,11 @@ const latestResultRecords = computed(() => resultRecords.value.slice(0, 3))
           <h3>帮助与知识库</h3>
           <el-button text @click="$router.push('/supplier/help')">查看全部</el-button>
         </div>
-        <div v-for="item in standardsStore.knowledgeBase.slice(0, 3)" :key="item.id" class="faq-item">
-          <strong>{{ item.title }}</strong>
+        <div v-for="item in knowledgeHighlights" :key="`${item.kind}-${item.id}`" class="faq-item">
+          <div class="knowledge-item-head">
+            <strong>{{ item.title }}</strong>
+            <el-tag effect="plain" size="small">{{ item.kind }} · {{ item.accent }}</el-tag>
+          </div>
           <p>{{ item.summary }}</p>
         </div>
       </div>
@@ -312,6 +331,13 @@ const latestResultRecords = computed(() => resultRecords.value.slice(0, 3))
   margin-top: 16px;
   padding-top: 16px;
   border-top: 1px dashed rgba(31, 76, 128, 0.16);
+}
+
+.knowledge-item-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
 }
 
 .faq-item p {

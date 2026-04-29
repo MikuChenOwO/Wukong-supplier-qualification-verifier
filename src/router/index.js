@@ -49,6 +49,7 @@ const routes = [
       { path: 'risk-radar', name: 'admin-risk-radar', component: () => import('../views/admin/RiskRadarView.vue') },
       { path: 'suppliers', name: 'admin-suppliers', component: () => import('../views/admin/SupplierManagementView.vue') },
       { path: 'standards', name: 'admin-standards', component: () => import('../views/admin/StandardManagementView.vue') },
+      { path: 'permissions', name: 'admin-permissions', component: () => import('../views/admin/AdminPermissionManagementView.vue') },
       { path: 'logs', name: 'admin-logs', component: () => import('../views/admin/AuditLogView.vue') },
     ],
   },

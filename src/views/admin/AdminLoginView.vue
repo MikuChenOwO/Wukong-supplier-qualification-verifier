@@ -41,20 +41,25 @@ async function handleLogin() {
   <div class="auth-shell">
     <div class="auth-panel">
       <div class="auth-visual">
-        <img src="/assets/wukong_verticle.png" alt="悟空管理员登录视觉" />
+        <img src="/assets/wukong_verticle.png" alt="管理员登录视觉图" />
         <div class="visual-overlay">
           <span>WUKONG</span>
           <h1>资质审核管理服务</h1>
-          <p>处理审核待办、监控文件更新、维护审核标准。</p>
+          <p>处理审核待办、监控文件更新、维护审核标准、权限与外部接口配置。</p>
         </div>
       </div>
 
       <div class="auth-form">
         <div class="form-heading">
           <h2>管理员登录</h2>
-          <p>管理员仅可审核和填写意见，不能修改供应商原始资料与文件。</p>
+          <p>管理员只负责审核、风控、系统配置和意见维护，不修改供应商原始资料与文件。</p>
         </div>
-        <el-alert type="info" :closable="false" title="测试账号：admin / admin123" style="margin-bottom: 16px" />
+        <el-alert
+          type="info"
+          :closable="false"
+          style="margin-bottom: 16px"
+          title="测试账号：admin / admin123（采购 / 审核员）；sysadmin / sysadmin123（系统管理员）"
+        />
         <el-form ref="formRef" :model="form" :rules="rules" label-position="top">
           <el-form-item label="管理员账号" prop="account">
             <el-input v-model="form.account" placeholder="请输入管理员账号" />
