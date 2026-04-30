@@ -1,6 +1,7 @@
 <script setup>
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import AppFooter from '../components/AppFooter.vue'
 
 const router = useRouter()
 const entrySection = ref(null)
@@ -58,6 +59,7 @@ onBeforeUnmount(() => {
         </button>
       </div>
     </section>
+    <AppFooter />
   </div>
 </template>
 

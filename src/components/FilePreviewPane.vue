@@ -12,6 +12,7 @@ const rotation = ref(0)
 const boxRef = ref(null)
 
 const isPdf = computed(() => props.mimeType.includes('pdf') || props.previewUrl.startsWith('data:application/pdf'))
+const fileTypeLabel = computed(() => (isPdf.value ? 'PDF 预览' : props.previewUrl ? '图片预览' : '暂无预览'))
 const contentStyle = computed(() => ({
   transform: `scale(${zoom.value}) rotate(${rotation.value}deg)`,
   transformOrigin: 'center center',
@@ -23,6 +24,11 @@ function changeZoom(delta) {
 
 function rotate() {
   rotation.value += 90
+}
+
+function resetView() {
+  zoom.value = 1
+  rotation.value = 0
 }
 
 async function fullScreen() {
@@ -37,12 +43,15 @@ async function fullScreen() {
     <div class="preview-toolbar">
       <div>
         <h3>{{ title }}</h3>
-        <span class="status-text">支持 PDF / 图片在线查看、放大、旋转与全屏</span>
+        <span class="status-text">支持 PDF 与图片在线查看，可缩放、旋转和全屏查看。</span>
       </div>
       <div class="toolbar">
+        <el-tag type="info">{{ fileTypeLabel }}</el-tag>
+        <span class="zoom-text">缩放 {{ Math.round(zoom * 100) }}%</span>
         <el-button plain @click="changeZoom(-0.1)">缩小</el-button>
         <el-button plain @click="changeZoom(0.1)">放大</el-button>
         <el-button plain @click="rotate">旋转</el-button>
+        <el-button plain @click="resetView">重置</el-button>
         <el-button type="primary" @click="fullScreen">全屏</el-button>
       </div>
     </div>
@@ -62,7 +71,7 @@ async function fullScreen() {
         :alt="title"
       />
       <div v-else class="rich-empty">
-        当前文件暂无预览内容，Mock 模式下会保留文件元数据与审核结果。
+        当前文件暂无预览内容，Mock 模式下会保留文件元数据、识别结果和审核结论。
       </div>
     </div>
   </div>
@@ -85,8 +94,13 @@ async function fullScreen() {
   margin: 0 0 8px;
 }
 
+.zoom-text {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
 .preview-stage {
-  min-height: 480px;
+  min-height: 420px;
   display: grid;
   place-items: center;
   padding: 18px;
@@ -97,8 +111,9 @@ async function fullScreen() {
 
 .pdf-frame,
 .image-frame {
-  width: min(100%, 880px);
-  height: 520px;
+  width: 100%;
+  max-width: 760px;
+  height: 460px;
   border: none;
   border-radius: 14px;
   background: white;

@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import {
+  CASE_LIBRARY,
   DOCUMENT_TYPES,
   KNOWLEDGE_BASE,
   MOCK_BUSINESS_REGISTRY,
@@ -24,10 +25,13 @@ export const useStandardsStore = defineStore('standards', {
     thresholdMatrix: clone(THRESHOLD_MATRIX),
     businessRegistry: clone(MOCK_BUSINESS_REGISTRY),
     knowledgeBase: clone(KNOWLEDGE_BASE),
+    caseLibrary: clone(CASE_LIBRARY),
     reminderYears: 5,
   }),
   getters: {
     activeTemplates: (state) => state.templates.filter((item) => item.status === '启用'),
+    faqCategories: (state) => ['全部', ...new Set(state.knowledgeBase.map((item) => item.category))],
+    caseCategories: (state) => ['全部', ...new Set(state.caseLibrary.map((item) => item.caseCategory))],
   },
   actions: {
     findRegistryEntry(creditCode) {

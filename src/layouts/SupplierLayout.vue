@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { useSuppliersStore } from '../stores/suppliers'
+import AppFooter from '../components/AppFooter.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -15,6 +16,8 @@ const menus = [
   { index: '/supplier/overview', label: '总览', icon: 'DataAnalysis' },
   { index: '/supplier/company', label: '企业信息', icon: 'OfficeBuilding' },
   { index: '/supplier/upload', label: '文件管理', icon: 'UploadFilled' },
+  { index: '/supplier/results', label: '结果与申诉', icon: 'Tickets' },
+  { index: '/supplier/appeals', label: '申诉记录', icon: 'ChatLineSquare' },
   { index: '/supplier/records', label: '核验记录', icon: 'DocumentChecked' },
   { index: '/supplier/help', label: '帮助中心', icon: 'Reading' },
 ]
@@ -71,6 +74,7 @@ function logout() {
         </el-main>
       </el-container>
     </el-container>
+    <AppFooter />
   </div>
 </template>
 

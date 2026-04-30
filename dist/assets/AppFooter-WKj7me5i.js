@@ -1,0 +1,1 @@
+import{_ as e,b as o,c}from"./index-BK-SOPis.js";const t={},r={class:"app-footer"};function s(_,a){return o(),c("footer",r," © 2026 哈尔滨工程大学大数据与智能商务技术工信部重点实验室 版权所有 ")}const p=e(t,[["render",s],["__scopeId","data-v-7ecb9499"]]);export{p as A};
